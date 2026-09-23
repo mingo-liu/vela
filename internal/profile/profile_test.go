@@ -2,6 +2,7 @@ package profile
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,7 +48,6 @@ rules:
 
 func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 	cases := []string{
-		"tun:\n  enable: true\n",
 		"listeners:\n  - name: open\n    type: mixed\n    port: 9000\n",
 		"proxy-providers:\n  remote:\n    type: file\n    path: /tmp/private\n",
 		"rules:\n  - GEOSITE,CN,DIRECT\n",
@@ -59,6 +59,52 @@ func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 		if _, err := Compile([]byte(source), 7890, 9090, "secret"); err == nil {
 			t.Errorf("accepted unsafe config: %q", source)
 		}
+	}
+}
+
+func TestCompileManagesTunForBothModes(t *testing.T) {
+	source := []byte("tun:\n  enable: true\n  device: utun99\n  auto-route: false\nrules: [MATCH,DIRECT]\n")
+	for _, enabled := range []bool{false, true} {
+		compiled, err := CompileForMode(source, 7890, 9090, "secret", enabled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(compiled, &doc); err != nil {
+			t.Fatal(err)
+		}
+		tun := lookup(doc.Content[0], "tun")
+		if !enabled && tun != nil {
+			t.Fatal("system proxy config retained TUN")
+		}
+		if enabled {
+			if tun == nil || lookup(tun, "enable").Value != "true" || lookup(tun, "auto-route").Value != "true" || lookup(tun, "device") != nil {
+				t.Fatalf("TUN config was not managed: %s", compiled)
+			}
+			if dns := lookup(doc.Content[0], "dns"); dns == nil || lookup(dns, "enable").Value != "true" {
+				t.Fatalf("TUN DNS was not enabled: %s", compiled)
+			}
+		}
+	}
+}
+
+func TestCompileTunWithRealCore(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to check generated TUN config")
+	}
+	dir := t.TempDir()
+	compiled, err := CompileForMode([]byte("proxies: []\nrules:\n  - MATCH,DIRECT\n"), 7890, 9090, "secret", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "runtime.yaml")
+	if err := os.WriteFile(path, compiled, 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(binary, "-t", "-d", dir, "-f", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("mihomo rejected TUN config: %v\n%s", err, output)
 	}
 }
 

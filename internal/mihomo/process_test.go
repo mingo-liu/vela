@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -106,6 +107,36 @@ rules:
 	state, err = runner.SetSystemProxy(true)
 	if err == nil || state.Status != "stopped" || state.SystemProxyEnabled {
 		t.Fatalf("core was not stopped after system proxy enable failed: %+v, %v", state, err)
+	}
+}
+
+func TestTunStartFailureRestoresSystemProxy(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to run the real core integration test")
+	}
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if err := store.Import("proxies: []\nrules:\n  - MATCH,DIRECT\n"); err != nil {
+		t.Fatal(err)
+	}
+	proxy := &testSystemProxy{}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, proxy, nil)
+	runner.SetTunLauncher(func(_, _ string) (*exec.Cmd, error) { return exec.Command("false"), nil })
+	t.Cleanup(runner.Close)
+	if _, err := runner.SetSystemProxy(true); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runner.SetTun(true)
+	if err == nil {
+		t.Fatal("expected TUN launch failure")
+	}
+	if state.Status != "running" || !state.SystemProxyEnabled || state.TunEnabled || !proxy.enabled {
+		t.Fatalf("original system proxy connection was not restored: %+v", state)
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"github.com/mingo-liu/vela/internal/profile"
 )
 
-// RuntimeService is the Wails boundary for the first local proxy slice.
+// RuntimeService is the Wails boundary for Vela's connection modes.
 // It exposes no controller secret or raw controller URL.
 type RuntimeService struct {
 	runner *mihomo.Runner
@@ -39,6 +39,10 @@ func (s *RuntimeService) SelectSubscription(id string) (mihomo.State, error) {
 
 func (s *RuntimeService) SetSystemProxy(enabled bool) (mihomo.State, error) {
 	return s.runner.SetSystemProxy(enabled)
+}
+
+func (s *RuntimeService) SetTun(enabled bool) (mihomo.State, error) {
+	return s.runner.SetTun(enabled)
 }
 
 func (s *RuntimeService) Groups() ([]mihomo.Group, error) { return s.runner.Groups() }

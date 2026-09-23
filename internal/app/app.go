@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/mingo-liu/vela/internal/desktop"
 	"github.com/mingo-liu/vela/internal/mihomo"
@@ -27,6 +28,7 @@ func Run(assets fs.FS) error {
 	binary := findBinary()
 	var wails *application.App
 	var systemProxyMenuItem *application.MenuItem
+	var tunMenuItem *application.MenuItem
 	menuStateUpdates := make(chan struct{}, 1)
 	runner := mihomo.NewRunner(store, subs, dataDir, binary, 7890, macos.NewSystemProxy(dataDir), func(state mihomo.State) {
 		select {
@@ -37,6 +39,9 @@ func Run(assets fs.FS) error {
 			wails.Event.Emit("runtime-state", state)
 		}
 	})
+	if runtime.GOOS == "darwin" {
+		runner.SetTunLauncher(macos.NewTunLauncher(binary, dataDir))
+	}
 	service := desktop.NewRuntimeService(runner)
 	wails = application.New(application.Options{
 		Name:        "Vela",
@@ -62,13 +67,22 @@ func Run(assets fs.FS) error {
 	systemProxyMenuItem.OnClick(func(_ *application.Context) {
 		state, _ := runner.SetSystemProxy(!runner.Snapshot().SystemProxyEnabled)
 		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
+		tunMenuItem.SetChecked(state.TunEnabled)
+	})
+	tunMenuItem = menu.AddCheckbox("Tun 模式", false)
+	tunMenuItem.OnClick(func(_ *application.Context) {
+		state, _ := runner.SetTun(!runner.Snapshot().TunEnabled)
+		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
+		tunMenuItem.SetChecked(state.TunEnabled)
 	})
 	menu.AddSeparator()
 	menu.Add("退出 Vela").OnClick(func(_ *application.Context) { wails.Quit() })
 	tray.SetMenu(menu)
 	go func() {
 		for range menuStateUpdates {
-			systemProxyMenuItem.SetChecked(runner.Snapshot().SystemProxyEnabled)
+			state := runner.Snapshot()
+			systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
+			tunMenuItem.SetChecked(state.TunEnabled)
 		}
 	}()
 	return wails.Run()

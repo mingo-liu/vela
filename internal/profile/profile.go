@@ -175,6 +175,11 @@ func (s *Store) NodeNames() ([]string, error) {
 // Compile preserves compatible user settings while taking ownership of every
 // inbound and controller setting. This first slice accepts inline resources only.
 func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte, error) {
+	return CompileForMode(data, mixedPort, controllerPort, secret, false)
+}
+
+// CompileForMode replaces inbound settings, including TUN, with Vela-managed values.
+func CompileForMode(data []byte, mixedPort, controllerPort int, secret string, tun bool) ([]byte, error) {
 	if mixedPort < 1 || mixedPort > 65535 || controllerPort < 1 || controllerPort > 65535 || secret == "" {
 		return nil, errors.New("受管端口或控制密钥无效")
 	}
@@ -207,10 +212,11 @@ func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte,
 		"port", "socks-port", "redir-port", "tproxy-port", "mixed-port", "allow-lan", "bind-address", "mode",
 		"external-controller", "external-controller-tls", "external-controller-unix", "external-controller-pipe",
 		"external-controller-cors", "external-ui", "external-ui-url", "external-doh-server", "secret", "lan-allowed-ips", "lan-disallowed-ips",
+		"tun",
 	} {
 		managed[key] = true
 	}
-	for _, key := range []string{"tun", "listeners", "proxy-providers", "rule-providers", "script", "sniffer"} {
+	for _, key := range []string{"listeners", "proxy-providers", "rule-providers", "script", "sniffer"} {
 		if value := lookup(root, key); value != nil && !isEmpty(value) {
 			return nil, fmt.Errorf("首版暂不支持 %s，请使用内联节点与规则", key)
 		}
@@ -220,6 +226,9 @@ func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte,
 		if !allowed[key] && !managed[key] {
 			return nil, fmt.Errorf("首版暂不支持顶层字段 %s", key)
 		}
+	}
+	if dns := lookup(root, "dns"); dns != nil && !isEmpty(dns) && dns.Kind != yaml.MappingNode {
+		return nil, errors.New("DNS 配置必须是对象")
 	}
 	if dns := lookup(root, "dns"); dns != nil && dns.Kind == yaml.MappingNode {
 		if listen := lookup(dns, "listen"); listen != nil && listen.Value != "" && listen.Value != "0" {
@@ -247,6 +256,24 @@ func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte,
 	set(root, "mode", "rule", "!!str")
 	set(root, "external-controller", fmt.Sprintf("127.0.0.1:%d", controllerPort), "!!str")
 	set(root, "secret", secret, "!!str")
+	if tun {
+		dns := lookup(root, "dns")
+		if dns == nil || dns.Kind != yaml.MappingNode {
+			remove(root, "dns")
+			dns = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "dns"}, dns)
+		}
+		remove(dns, "enable")
+		set(dns, "enable", "true", "!!bool")
+		if lookup(dns, "nameserver") == nil {
+			dns.Content = append(dns.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "nameserver"}, &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{{Kind: yaml.ScalarNode, Tag: "!!str", Value: "system"}}})
+		}
+		var tunNode yaml.Node
+		if err := yaml.Unmarshal([]byte("enable: true\nstack: mixed\nauto-route: true\nauto-detect-interface: true\ndns-hijack:\n  - any:53\n  - tcp://any:53\n"), &tunNode); err != nil {
+			return nil, err
+		}
+		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "tun"}, tunNode.Content[0])
+	}
 	return yaml.Marshal(&doc)
 }
 

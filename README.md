@@ -1,10 +1,14 @@
 # Vela
 
-Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当前 MVP 支持导入单份 mihomo YAML 或 HTTP/HTTPS 订阅地址、手动更新订阅、选择手动策略组中的节点，以及通过一个系统代理开关控制内核与当前网络服务的代理。关闭窗口后应用留在菜单栏，明确退出时停止内核。
+Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当前 MVP 支持导入单份 mihomo YAML 或 HTTP/HTTPS 订阅地址、手动更新订阅、选择手动策略组中的节点，以及系统代理和 Tun 两种连接模式。关闭窗口后应用留在菜单栏，明确退出时停止内核。
 
-本地 mixed 端口固定为 `127.0.0.1:7890`。打开系统代理开关时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。如果接管失败，Vela 会停止刚启动的内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量；TUN、多配置和 provider 缓存仍在后续阶段。
+本地 mixed 端口固定为 `127.0.0.1:7890`。打开系统代理时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量。
 
-窗口左侧的 Home 显示连接状态和系统代理开关，Proxies 用于选择策略组节点、测量节点延迟并按名称或延迟排序，Profiles 用于导入 YAML 或管理订阅。未连接时测速会临时启动内核，完成后关闭，不改变系统代理设置。
+Tun 模式首次使用或 Vela / mihomo 更新后会请求一次 macOS 管理员授权，将辅助程序安装到 `/Library/PrivilegedHelperTools/local.vela.desktop.tun/`。后续开关 Tun 不再弹出密码框。辅助程序使用 mihomo 的 `auto-route` 接管设备流量，并启用内部 DNS 与 DNS 劫持。系统代理与 Tun 互斥；切换失败时 Vela 会尝试恢复原模式。关闭 Tun 或退出应用时会停止内核；GUI 异常退出后，辅助程序会检测并停止内核。macOS 对发往局域网 DNS 的请求有劫持限制。多配置和 provider 缓存仍在后续阶段。
+
+如需移除已授权的 Tun 辅助程序，先退出 Vela，再运行 `bin/vela --vela-tun-uninstall`（已打包应用可使用 `.app/Contents/MacOS/vela`）。
+
+窗口左侧的 Home 显示连接状态和两种模式的开关，Proxies 用于选择策略组节点、测量节点延迟并按名称或延迟排序，Profiles 用于导入 YAML 或管理订阅。未连接时测速会临时启动内核，完成后关闭，不改变连接模式。
 
 ## 构建与运行
 
@@ -40,7 +44,7 @@ npm --prefix frontend run typecheck
 
 ## 导入范围与数据
 
-- 接受单文档、最多 2 MiB 的 mihomo YAML。当前支持内联节点、策略组、规则、GEOIP 规则与基本 DNS 配置；额外监听、TUN、外部 provider、GEOSITE 等其他 GEO 规则及未验证的顶层字段会明确拒绝。
+- 接受单文档、最多 2 MiB 的 mihomo YAML。当前支持内联节点、策略组、规则、GEOIP 规则与基本 DNS 配置；配置中的 `tun` 字段由 Vela 接管，原值不会直接运行。额外监听、外部 provider、GEOSITE 等其他 GEO 规则及未验证的顶层字段会明确拒绝。
 - 订阅下载使用直连，不继承系统代理；限制超时、响应大小和重定向。请求使用 Clash.Meta 客户端标识，以便支持按客户端类型返回 mihomo YAML 的订阅服务。下载或校验失败时，旧配置保持不变。仅接受返回 mihomo YAML 的订阅地址；如果服务端仍返回 Base64 节点列表，界面会提示切换订阅格式，当前版本不转换节点列表。
 - 订阅 URL 存在 macOS Keychain，配置正文保存在 `~/Library/Application Support/Vela/` 的私有文件中。URL 中的令牌不会写进仓库或应用日志。HTTP 订阅会在网络上传输明文令牌，优先使用服务商提供的 HTTPS 地址。
 - 运行时控制接口只监听回环地址，使用每次启动生成的随机密钥。界面不直接访问控制接口。

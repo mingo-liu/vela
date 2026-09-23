@@ -8,7 +8,7 @@ import type { Subscription } from '../bindings/github.com/mingo-liu/vela/interna
 type Page = 'home' | 'proxies' | 'profiles'
 type SortMode = 'name' | 'delay'
 
-const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false }
+const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false }
 const navigation = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'proxies', label: 'Proxies', icon: GlobeHemisphereWest },
@@ -206,7 +206,7 @@ export default function App() {
   }
 
   const running = state.status === 'running'
-  const connected = state.systemProxyEnabled
+  const connected = state.systemProxyEnabled || state.tunEnabled
 
   return <div className="app-layout">
     <aside className="sidebar" aria-label="主导航">
@@ -222,8 +222,12 @@ export default function App() {
         <div className="page-heading"><h1>Home</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <section className="panel connection-panel" aria-labelledby="connection-title">
-          <div className="connection-main"><div><span className="section-kicker">SYSTEM PROXY</span><h2 id="connection-title">{connected ? '连接已就绪' : '准备开始连接'}</h2></div><button className={`system-switch${connected ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={connected} disabled={busy || (!state.hasProfile && !connected)} onClick={() => void execute(() => Runtime.SetSystemProxy(!connected))}><span className="switch-track"><span className="switch-knob" /></span><span>{connected ? '开启' : '关闭'}</span></button></div>
-          {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>先导入配置以启用系统代理 <ArrowRight size={17} /></button>}
+          <div className="connection-main"><div><span className="section-kicker">CONNECTION</span><h2 id="connection-title">{connected ? '连接已就绪' : '准备开始连接'}</h2></div></div>
+          <div className="connection-modes" aria-label="连接模式">
+            <button className={`mode-option${state.systemProxyEnabled ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={state.systemProxyEnabled} disabled={busy || (!state.hasProfile && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}><span><strong>系统代理</strong><small>让遵循系统代理设置的应用连接</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+            <button className={`mode-option${state.tunEnabled ? ' on' : ''}`} type="button" role="switch" aria-label="Tun 模式" aria-checked={state.tunEnabled} disabled={busy || !state.tunSupported || (!state.hasProfile && !state.tunEnabled)} onClick={() => void execute(() => Runtime.SetTun(!state.tunEnabled))}><span><strong>Tun 模式</strong><small>{state.tunSupported ? '首次使用或更新后授权一次' : '当前平台暂不支持'}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+          </div>
+          {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>先导入配置以启用连接 <ArrowRight size={17} /></button>}
           <div className="connection-meta"><div><span>本地代理</span><strong>127.0.0.1:{state.port}</strong></div><div><span>内核状态</span><strong>{running ? '运行中' : state.status === 'starting' ? '启动中' : '已停止'}</strong></div><div><span>配置文件</span><strong>{state.hasProfile ? '已导入' : '未导入'}</strong></div></div>
         </section>
         <div className="module-grid">
@@ -292,7 +296,7 @@ export default function App() {
           <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>导入订阅</h2></div></div><label className="field-label" htmlFor="subscription-url">订阅链接</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={busy} autoComplete="off" spellCheck={false} placeholder="粘贴 HTTP / HTTPS 订阅地址" onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={busy || !subscriptionURL} onClick={() => void importSubscription()}>导入订阅 <ArrowRight size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">此地址使用 HTTP，访问令牌会在网络上传输明文。</small>}</section>
         </div>
       </>}
-      <footer>关闭窗口后 Vela 会留在菜单栏；退出应用时恢复系统代理设置。</footer>
+      <footer>关闭窗口后 Vela 会留在菜单栏；退出应用时关闭连接并恢复系统代理设置。</footer>
     </main>
   </div>
 }

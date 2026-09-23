@@ -28,6 +28,8 @@ type State struct {
 	HasProfile         bool   `json:"hasProfile"`
 	Error              string `json:"error"`
 	SystemProxyEnabled bool   `json:"systemProxyEnabled"`
+	TunEnabled         bool   `json:"tunEnabled"`
+	TunSupported       bool   `json:"tunSupported"`
 }
 
 type SystemProxy interface {
@@ -61,6 +63,8 @@ type Runner struct {
 	logs            *tailWriter
 	onChange        func(State)
 	systemProxy     SystemProxy
+	tunLauncher     func(configPath, stopPath string) (*exec.Cmd, error)
+	tunStopPath     string
 	proxyGeneration uint64
 }
 
@@ -73,6 +77,13 @@ func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binar
 		}
 	}
 	return r
+}
+
+func (r *Runner) SetTunLauncher(launcher func(configPath, stopPath string) (*exec.Cmd, error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tunLauncher = launcher
+	r.state.TunSupported = launcher != nil
 }
 
 func (r *Runner) Snapshot() State {
@@ -151,7 +162,7 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 		if err != nil {
 			return r.state, err
 		}
-		previousConfig, err = profile.Compile(previousProfile, r.state.Port, r.apiPort, r.secret)
+		previousConfig, err = profile.CompileForMode(previousProfile, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled)
 		if err != nil {
 			return r.state, err
 		}
@@ -173,7 +184,7 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 	return r.state, nil
 }
 
-// reloadSelectedProfile keeps the current process and system proxy in place.
+// reloadSelectedProfile keeps the current process and connection mode in place.
 // If reloading fails, both the saved selection and the running config are restored.
 func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, previousSubscriptions []profile.Subscription) error {
 	rollback := func(cause error, reload bool) error {
@@ -210,7 +221,7 @@ func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, p
 	if err := r.ensureGeoIPDatabase(raw); err != nil {
 		return rollback(err, false)
 	}
-	compiled, err := profile.Compile(raw, r.state.Port, r.apiPort, r.secret)
+	compiled, err := profile.CompileForMode(raw, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled)
 	if err != nil {
 		return rollback(err, false)
 	}
@@ -241,6 +252,10 @@ func (r *Runner) reloadConfig(compiled []byte) error {
 }
 
 func (r *Runner) Start() (State, error) {
+	return r.start(false)
+}
+
+func (r *Runner) start(tun bool) (State, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil {
@@ -248,6 +263,9 @@ func (r *Runner) Start() (State, error) {
 	}
 	if r.binary == "" {
 		return r.fail(errors.New("未找到 mihomo 内核；请先运行资源准备任务"))
+	}
+	if tun && r.tunLauncher == nil {
+		return r.fail(errors.New("当前平台不支持 Tun 模式"))
 	}
 	raw, err := r.store.Load()
 	if err != nil {
@@ -273,7 +291,7 @@ func (r *Runner) Start() (State, error) {
 			return r.fail(err)
 		}
 		r.apiPort = port
-		compiled, err := profile.Compile(raw, r.state.Port, port, r.secret)
+		compiled, err := profile.CompileForMode(raw, r.state.Port, port, r.secret, tun)
 		if err != nil {
 			return r.fail(err)
 		}
@@ -289,10 +307,21 @@ func (r *Runner) Start() (State, error) {
 		if err != nil {
 			return r.fail(fmt.Errorf("内核配置校验失败（%v）；请检查节点与规则内容", err))
 		}
-		cmd := exec.Command(r.binary, "-d", r.dataDir, "-f", configPath)
-		cmd.Env = cleanEnv()
+		var cmd *exec.Cmd
+		if tun {
+			stopPath := filepath.Join(r.dataDir, fmt.Sprintf("tun-stop-%s", r.secret))
+			cmd, err = r.tunLauncher(configPath, stopPath)
+			if err != nil {
+				return r.fail(fmt.Errorf("Tun 授权失败: %w", err))
+			}
+			r.tunStopPath = stopPath
+		} else {
+			cmd = exec.Command(r.binary, "-d", r.dataDir, "-f", configPath)
+			cmd.Env = cleanEnv()
+		}
 		cmd.Stdout, cmd.Stderr = r.logs, r.logs
 		if err := cmd.Start(); err != nil {
+			r.tunStopPath = ""
 			return r.fail(err)
 		}
 		done := make(chan struct{})
@@ -307,6 +336,8 @@ func (r *Runner) Start() (State, error) {
 				}
 				r.cmd = nil
 				r.state.SystemProxyEnabled = proxyErr != nil
+				r.state.TunEnabled = false
+				r.tunStopPath = ""
 				r.proxyGeneration++
 				if r.state.Status != "stopping" {
 					r.state.Status = "failed"
@@ -320,10 +351,25 @@ func (r *Runner) Start() (State, error) {
 			r.mu.Unlock()
 		}()
 		r.cmd, r.done = cmd, done
-		if err := r.waitReady(done); err != nil {
+		readyTimeout := 12 * time.Second
+		if tun {
+			readyTimeout = 2 * time.Minute
+		}
+		if err := r.waitReadyUntil(done, readyTimeout); err != nil {
+			if tun {
+				_ = os.WriteFile(r.tunStopPath, nil, 0600)
+			}
 			_ = cmd.Process.Kill()
 			<-done
 			r.cmd = nil
+			r.tunStopPath = ""
+			detail := strings.TrimSpace(r.logs.String())
+			if len(detail) > 500 {
+				detail = detail[len(detail)-500:]
+			}
+			if detail != "" {
+				return r.fail(fmt.Errorf("内核未就绪: %w；%s", err, detail))
+			}
 			return r.fail(fmt.Errorf("内核未就绪: %w", err))
 		}
 		if selected, err := r.store.SelectedOptions(); err == nil {
@@ -332,6 +378,7 @@ func (r *Runner) Start() (State, error) {
 			}
 		}
 		r.state.Status = "running"
+		r.state.TunEnabled = tun
 		r.emit()
 		return r.state, nil
 	}
@@ -373,19 +420,31 @@ func (r *Runner) Stop() (State, error) {
 	}
 	if r.cmd == nil {
 		r.state.Status, r.state.Error = "stopped", ""
+		r.state.TunEnabled = false
+		r.tunStopPath = ""
 		r.emit()
 		s := r.state
 		r.mu.Unlock()
 		return s, nil
 	}
 	cmd, done := r.cmd, r.done
+	tunStopPath := r.tunStopPath
 	r.state.Status = "stopping"
 	r.emit()
 	r.mu.Unlock()
-	_ = cmd.Process.Signal(os.Interrupt)
+	if tunStopPath != "" {
+		if err := os.WriteFile(tunStopPath, nil, 0600); err != nil {
+			return r.stopFailure(fmt.Errorf("停止 Tun 内核失败: %w", err))
+		}
+	} else {
+		_ = cmd.Process.Signal(os.Interrupt)
+	}
 	select {
 	case <-done:
-	case <-time.After(4 * time.Second):
+	case <-time.After(8 * time.Second):
+		if tunStopPath != "" {
+			return r.stopFailure(errors.New("Tun 内核未能及时停止"))
+		}
 		_ = cmd.Process.Kill()
 		<-done
 	}
@@ -394,30 +453,81 @@ func (r *Runner) Stop() (State, error) {
 		r.cmd = nil
 	}
 	r.state.Status, r.state.Error = "stopped", ""
+	r.state.TunEnabled = false
+	r.tunStopPath = ""
 	r.emit()
 	s := r.state
 	r.mu.Unlock()
 	return s, nil
 }
 
+func (r *Runner) stopFailure(err error) (State, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.state.Status = "running"
+	r.state.Error = err.Error()
+	r.emit()
+	return r.state, err
+}
+
 func (r *Runner) SetSystemProxy(enabled bool) (State, error) {
+	if enabled {
+		return r.setMode("system")
+	}
+	return r.setMode("off")
+}
+
+func (r *Runner) SetTun(enabled bool) (State, error) {
+	if enabled {
+		return r.setMode("tun")
+	}
+	return r.setMode("off")
+}
+
+func (r *Runner) setMode(mode string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
-	if !enabled {
-		return r.Stop()
+	r.mu.Lock()
+	previous := "off"
+	if r.state.SystemProxyEnabled {
+		previous = "system"
 	}
-	if r.systemProxy == nil {
-		return r.Snapshot(), errors.New("当前平台不支持系统代理")
+	if r.state.TunEnabled {
+		previous = "tun"
 	}
-	if _, err := r.Start(); err != nil {
+	r.mu.Unlock()
+	if mode == previous {
+		return r.Snapshot(), nil
+	}
+	if _, err := r.Stop(); err != nil {
 		return r.Snapshot(), err
 	}
-	r.mu.Lock()
-	if r.state.SystemProxyEnabled {
-		state := r.state
-		r.mu.Unlock()
+	if mode == "off" {
+		return r.Snapshot(), nil
+	}
+	state, err := r.activate(mode)
+	if err == nil {
 		return state, nil
 	}
+	if previous != "off" {
+		if _, restoreErr := r.activate(previous); restoreErr != nil {
+			return r.Snapshot(), errors.Join(err, fmt.Errorf("恢复原连接模式失败: %w", restoreErr))
+		}
+	}
+	return r.Snapshot(), err
+}
+
+func (r *Runner) activate(mode string) (State, error) {
+	if mode == "system" && r.systemProxy == nil {
+		return r.Snapshot(), errors.New("当前平台不支持系统代理")
+	}
+	if _, err := r.start(mode == "tun"); err != nil {
+		return r.Snapshot(), err
+	}
+	if mode == "tun" {
+		return r.Snapshot(), nil
+	}
+	r.mu.Lock()
 	if err := r.systemProxy.Enable(r.state.Port); err != nil {
 		r.mu.Unlock()
 		state, stopErr := r.Stop()
@@ -667,7 +777,11 @@ func (r *Runner) emit() {
 }
 
 func (r *Runner) waitReady(done <-chan struct{}) error {
-	deadline := time.NewTimer(12 * time.Second)
+	return r.waitReadyUntil(done, 12*time.Second)
+}
+
+func (r *Runner) waitReadyUntil(done <-chan struct{}, timeout time.Duration) error {
+	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	tick := time.NewTicker(150 * time.Millisecond)
 	defer tick.Stop()
@@ -779,4 +893,10 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 		w.data = append([]byte(nil), w.data[len(w.data)-(16<<10):]...)
 	}
 	return len(p), nil
+}
+
+func (w *tailWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return string(w.data)
 }
