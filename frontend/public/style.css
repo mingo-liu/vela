@@ -67,6 +67,9 @@ button, .file-button, select { font: inherit; }
 .subscription small { display: block; font-size: 10px; color: #85a0ae; }
 .subscription .http-note { margin-top: 8px; color: #e8b88e; }
 .endpoint { font-size: 24px; letter-spacing: .02em; margin: 14px 0 15px; color: #d5fcf5; }
+.proxy-button { margin-top: 18px; border: 1px solid #6fa3a3; background: transparent; color: #9de7dd; border-radius: 8px; padding: 9px 13px; cursor: pointer; font-size: 12px; }
+.proxy-button:disabled { cursor: not-allowed; opacity: .45; }
+.proxy-note { display: block; margin-top: 11px; color: #85a0ae; font-size: 10px; line-height: 1.5; }
 
 .groups { margin-top: 18px; min-height: 130px; }
 .group { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 13px 0; border-top: 1px solid #2a4050; }

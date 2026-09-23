@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 
-const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '' }
+const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false }
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -113,9 +113,11 @@ export default function App() {
           {subscriptionURL.startsWith('http://') && <small className="http-note">此地址使用 HTTP，访问令牌会在网络上传输明文。</small>}
         </div>
       </section>
-      <section className="card"><div className="card-head"><h3>本地端口</h3><span>仅回环地址</span></div>
+      <section className="card"><div className="card-head"><h3>系统代理</h3><span>{state.systemProxyEnabled ? '已接管' : '未接管'}</span></div>
         <div className="endpoint">127.0.0.1:{state.port}</div>
-        <p>支持 HTTP 和 SOCKS。系统代理尚未接管；需要使用代理的应用请手动设置此地址。</p>
+        <p>启动内核后可接管当前网络服务的 HTTP、HTTPS 和 SOCKS 代理。关闭时恢复启用前的设置。</p>
+        <button className="proxy-button" disabled={busy || (!running && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}>{state.systemProxyEnabled ? '关闭系统代理' : '开启系统代理'}</button>
+        <small className="proxy-note">同时使用 Clash Verge 时，两个应用可能争用系统代理设置。</small>
       </section>
     </div>
     <section className="card groups"><div className="card-head"><h3>策略组</h3><span>{groups.length} 个可选择</span></div>

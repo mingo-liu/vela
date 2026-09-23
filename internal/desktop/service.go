@@ -30,6 +30,10 @@ func (s *RuntimeService) Start() (mihomo.State, error) { return s.runner.Start()
 
 func (s *RuntimeService) Stop() (mihomo.State, error) { return s.runner.Stop() }
 
+func (s *RuntimeService) SetSystemProxy(enabled bool) (mihomo.State, error) {
+	return s.runner.SetSystemProxy(enabled)
+}
+
 func (s *RuntimeService) Groups() ([]mihomo.Group, error) { return s.runner.Groups() }
 
 func (s *RuntimeService) Select(group, option string) error {

@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"errors"
 	"os"
 	"testing"
 
@@ -29,7 +30,8 @@ rules:
 `); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, nil)
+	systemProxy := &testSystemProxy{}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, systemProxy, nil)
 	t.Cleanup(runner.Close)
 	state, err := runner.Start()
 	if err != nil {
@@ -45,14 +47,41 @@ rules:
 	if len(groups) == 0 {
 		t.Fatal("no selector groups from controller")
 	}
+	if state, err = runner.SetSystemProxy(true); err != nil || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("enable system proxy: %+v, %v", state, err)
+	}
 	if err := runner.Select("Choose", "REJECT"); err != nil {
 		t.Fatal(err)
 	}
+	systemProxy.failDisable = true
+	if state, err = runner.Stop(); err == nil || state.Status != "running" {
+		t.Fatalf("core stopped before system proxy could be restored: %+v, %v", state, err)
+	}
+	systemProxy.failDisable = false
 	state, err = runner.Stop()
 	if err != nil || state.Status != "stopped" {
 		t.Fatalf("stop: %+v, %v", state, err)
 	}
+	if systemProxy.enabled {
+		t.Fatal("system proxy was not restored")
+	}
 }
+
+type testSystemProxy struct {
+	enabled     bool
+	failDisable bool
+}
+
+func (p *testSystemProxy) Enable(int) error { p.enabled = true; return nil }
+func (p *testSystemProxy) Disable() error {
+	if p.failDisable {
+		return errors.New("restore failed")
+	}
+	p.enabled = false
+	return nil
+}
+func (p *testSystemProxy) Recover() error        { return p.Disable() }
+func (p *testSystemProxy) Active() (bool, error) { return p.enabled, nil }
 
 type testURLStore struct{ value string }
 

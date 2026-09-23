@@ -23,10 +23,18 @@ import (
 )
 
 type State struct {
-	Status     string `json:"status"`
-	Port       int    `json:"port"`
-	HasProfile bool   `json:"hasProfile"`
-	Error      string `json:"error"`
+	Status             string `json:"status"`
+	Port               int    `json:"port"`
+	HasProfile         bool   `json:"hasProfile"`
+	Error              string `json:"error"`
+	SystemProxyEnabled bool   `json:"systemProxyEnabled"`
+}
+
+type SystemProxy interface {
+	Enable(port int) error
+	Disable() error
+	Recover() error
+	Active() (bool, error)
 }
 
 type Group struct {
@@ -36,24 +44,32 @@ type Group struct {
 }
 
 type Runner struct {
-	mu       sync.Mutex
-	store    *profile.Store
-	subs     *profile.Subscriptions
-	dataDir  string
-	binary   string
-	state    State
-	cmd      *exec.Cmd
-	done     chan struct{}
-	apiPort  int
-	secret   string
-	client   *http.Client
-	logs     *tailWriter
-	onChange func(State)
+	mu              sync.Mutex
+	store           *profile.Store
+	subs            *profile.Subscriptions
+	dataDir         string
+	binary          string
+	state           State
+	cmd             *exec.Cmd
+	done            chan struct{}
+	apiPort         int
+	secret          string
+	client          *http.Client
+	logs            *tailWriter
+	onChange        func(State)
+	systemProxy     SystemProxy
+	proxyGeneration uint64
 }
 
-func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binary string, port int, onChange func(State)) *Runner {
+func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binary string, port int, systemProxy SystemProxy, onChange func(State)) *Runner {
 	transport := &http.Transport{Proxy: nil}
-	return &Runner{store: store, subs: subs, dataDir: dataDir, binary: binary, state: State{Status: "stopped", Port: port, HasProfile: store.Exists()}, client: &http.Client{Timeout: 2 * time.Second, Transport: transport}, logs: &tailWriter{}, onChange: onChange}
+	r := &Runner{store: store, subs: subs, dataDir: dataDir, binary: binary, state: State{Status: "stopped", Port: port, HasProfile: store.Exists()}, client: &http.Client{Timeout: 2 * time.Second, Transport: transport}, logs: &tailWriter{}, onChange: onChange, systemProxy: systemProxy}
+	if systemProxy != nil {
+		if err := systemProxy.Recover(); err != nil {
+			r.state.Error = fmt.Sprintf("上次系统代理恢复失败: %v", err)
+		}
+	}
+	return r
 }
 
 func (r *Runner) Snapshot() State {
@@ -168,10 +184,19 @@ func (r *Runner) Start() (State, error) {
 			close(done)
 			r.mu.Lock()
 			if r.cmd == cmd {
+				var proxyErr error
+				if r.systemProxy != nil {
+					proxyErr = r.systemProxy.Disable()
+				}
 				r.cmd = nil
+				r.state.SystemProxyEnabled = proxyErr != nil
+				r.proxyGeneration++
 				if r.state.Status != "stopping" {
 					r.state.Status = "failed"
 					r.state.Error = fmt.Sprintf("内核退出: %v", err)
+					if proxyErr != nil {
+						r.state.Error += fmt.Sprintf("；系统代理恢复失败: %v", proxyErr)
+					}
 					r.emit()
 				}
 			}
@@ -214,6 +239,16 @@ func (r *Runner) ensureGeoIPDatabase(profile []byte) error {
 
 func (r *Runner) Stop() (State, error) {
 	r.mu.Lock()
+	if r.systemProxy != nil {
+		if err := r.systemProxy.Disable(); err != nil {
+			r.state.Error = fmt.Sprintf("系统代理恢复失败，内核仍在运行: %v", err)
+			s := r.state
+			r.mu.Unlock()
+			return s, err
+		}
+		r.state.SystemProxyEnabled = false
+		r.proxyGeneration++
+	}
 	if r.cmd == nil {
 		r.state.Status, r.state.Error = "stopped", ""
 		r.emit()
@@ -241,6 +276,63 @@ func (r *Runner) Stop() (State, error) {
 	s := r.state
 	r.mu.Unlock()
 	return s, nil
+}
+
+func (r *Runner) SetSystemProxy(enabled bool) (State, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.systemProxy == nil {
+		return r.state, errors.New("当前平台不支持系统代理")
+	}
+	if enabled {
+		if r.cmd == nil || r.state.Status != "running" {
+			return r.state, errors.New("请先启动内核")
+		}
+		if r.state.SystemProxyEnabled {
+			return r.state, nil
+		}
+		if err := r.systemProxy.Enable(r.state.Port); err != nil {
+			return r.state, err
+		}
+		r.state.SystemProxyEnabled = true
+		r.proxyGeneration++
+		go r.monitorSystemProxy(r.proxyGeneration)
+	} else {
+		if err := r.systemProxy.Disable(); err != nil {
+			return r.state, err
+		}
+		r.state.SystemProxyEnabled = false
+		r.proxyGeneration++
+	}
+	r.state.Error = ""
+	r.emit()
+	return r.state, nil
+}
+
+func (r *Runner) monitorSystemProxy(generation uint64) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		r.mu.Lock()
+		if !r.state.SystemProxyEnabled || r.proxyGeneration != generation {
+			r.mu.Unlock()
+			return
+		}
+		active, err := r.systemProxy.Active()
+		if err == nil && !active {
+			restoreErr := r.systemProxy.Disable()
+			r.state.SystemProxyEnabled = restoreErr != nil
+			r.proxyGeneration++
+			r.state.Error = "系统代理已被其他应用改写"
+			if restoreErr != nil {
+				r.state.Error += fmt.Sprintf("；恢复失败: %v", restoreErr)
+			}
+			r.emit()
+			r.mu.Unlock()
+			return
+		}
+		r.mu.Unlock()
+	}
 }
 
 func (r *Runner) Groups() ([]Group, error) {
