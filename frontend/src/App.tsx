@@ -117,7 +117,7 @@ export default function App() {
         <div className="endpoint">127.0.0.1:{state.port}</div>
         <p>启动内核后可接管当前网络服务的 HTTP、HTTPS 和 SOCKS 代理。关闭时恢复启用前的设置。</p>
         <button className="proxy-button" disabled={busy || (!running && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}>{state.systemProxyEnabled ? '关闭系统代理' : '开启系统代理'}</button>
-        <small className="proxy-note">同时使用 Clash Verge 时，两个应用可能争用系统代理设置。</small>
+        <small className="proxy-note">其他代理应用也可能修改系统代理设置。</small>
       </section>
     </div>
     <section className="card groups"><div className="card-head"><h3>策略组</h3><span>{groups.length} 个可选择</span></div>
