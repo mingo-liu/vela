@@ -201,7 +201,16 @@ tasks:
       - "darwin/icons.icns"
       - "windows/icon.ico"
     cmds:
-      - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+      - cmd: |
+          # Wails falls back to .icns when actool is unavailable, but leaves an old Assets.car behind.
+          rm -f darwin/Assets.car
+          if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app/Contents/Developer ]; then
+            export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+          fi
+          wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+        platforms: [darwin]
+      - cmd: wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+        platforms: [linux, windows]
 
   prepare:mihomo:
     summary: Downloads and verifies the pinned Apple Silicon mihomo binary

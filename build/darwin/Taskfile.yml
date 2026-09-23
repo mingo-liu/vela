@@ -166,6 +166,7 @@ tasks:
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo"
       - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Country.mmdb"
       - |
+        rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
         if [ -f build/darwin/Assets.car ]; then
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
         fi
@@ -196,6 +197,7 @@ tasks:
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/mihomo"
       - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/Country.mmdb"
       - |
+        rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/Assets.car"
         if [ -f build/darwin/Assets.car ]; then
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
         fi
