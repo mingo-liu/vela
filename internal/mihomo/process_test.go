@@ -62,6 +62,33 @@ rules:
 	if systemProxy.enabled {
 		t.Fatal("system proxy was not restored")
 	}
+	if err := runner.Select("Choose", "DIRECT"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Select("GLOBAL", "Choose"); err != nil {
+		t.Fatal(err)
+	}
+	state, err = runner.SetSystemProxy(true)
+	if err != nil || state.Status != "running" {
+		t.Fatalf("restart with offline choice: %+v, %v", state, err)
+	}
+	groups, err = runner.Groups()
+	chosen := ""
+	global := ""
+	for _, group := range groups {
+		if group.Name == "Choose" {
+			chosen = group.Current
+		}
+		if group.Name == "GLOBAL" {
+			global = group.Current
+		}
+	}
+	if err != nil || chosen != "DIRECT" || global != "Choose" {
+		t.Fatalf("offline choice not applied after start: %+v, %v", groups, err)
+	}
+	if _, err := runner.SetSystemProxy(false); err != nil {
+		t.Fatal(err)
+	}
 	systemProxy.failEnable = true
 	state, err = runner.SetSystemProxy(true)
 	if err == nil || state.Status != "stopped" || state.SystemProxyEnabled {
@@ -77,15 +104,19 @@ func TestGroupsAvailableBeforeCoreStarts(t *testing.T) {
 	}
 	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, "", 7890, nil, nil)
 	groups, err := runner.Groups()
-	if err != nil || len(groups) != 1 || groups[0].Name != "Choose" || groups[0].Current != "Node A" || len(groups[0].Options) != 2 {
+	if err != nil || len(groups) != 2 || groups[0].Name != "Choose" || groups[0].Current != "Node A" || len(groups[0].Options) != 2 || groups[1].Name != "GLOBAL" {
 		t.Fatalf("offline groups: %+v, %v", groups, err)
 	}
 	nodes, err := runner.NodeNames()
 	if err != nil || len(nodes) != 1 || nodes[0] != "Node A" {
 		t.Fatalf("offline nodes: %+v, %v", nodes, err)
 	}
-	if err := runner.Select("Choose", "REJECT"); err == nil {
-		t.Fatal("offline selection unexpectedly changed the connection")
+	if err := runner.Select("Choose", "DIRECT"); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = runner.Groups()
+	if err != nil || len(groups) != 2 || groups[0].Current != "DIRECT" {
+		t.Fatalf("offline selection: %+v, %v", groups, err)
 	}
 }
 

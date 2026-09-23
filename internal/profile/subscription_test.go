@@ -168,7 +168,7 @@ func TestSelectSubscriptionUsesCachedProfileOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	groups, err := store.SelectorGroups()
-	if err != nil || len(groups) != 1 || groups[0].Name != "One" || len(groups[0].Options) != 2 {
+	if err != nil || len(groups) != 2 || groups[0].Name != "One" || len(groups[0].Options) != 2 || groups[1].Name != "GLOBAL" {
 		t.Fatalf("selected first subscription: %+v, %v", groups, err)
 	}
 	list, err = subs.List()
@@ -179,7 +179,7 @@ func TestSelectSubscriptionUsesCachedProfileOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	groups, err = store.SelectorGroups()
-	if err != nil || len(groups) != 1 || groups[0].Name != "Two" {
+	if err != nil || len(groups) != 2 || groups[0].Name != "Two" {
 		t.Fatalf("selected second subscription: %+v, %v", groups, err)
 	}
 }
@@ -202,7 +202,7 @@ func TestLegacyActiveSubscriptionIsCachedBeforeSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	groups, err := store.SelectorGroups()
-	if err != nil || len(groups) != 1 || groups[0].Name != "Legacy" {
+	if err != nil || len(groups) != 2 || groups[0].Name != "Legacy" {
 		t.Fatalf("legacy profile was not restored: %+v, %v", groups, err)
 	}
 }

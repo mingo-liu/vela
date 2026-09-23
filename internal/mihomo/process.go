@@ -238,6 +238,11 @@ func (r *Runner) Start() (State, error) {
 			r.cmd = nil
 			return r.fail(fmt.Errorf("内核未就绪: %w", err))
 		}
+		if selected, err := r.store.SelectedOptions(); err == nil {
+			for group, option := range selected {
+				_ = r.selectController(group, option)
+			}
+		}
 		r.state.Status = "running"
 		r.emit()
 		return r.state, nil
@@ -378,11 +383,21 @@ func (r *Runner) Groups() ([]Group, error) {
 		if err != nil {
 			return nil, err
 		}
+		selected, err := r.store.SelectedOptions()
+		if err != nil {
+			return nil, err
+		}
 		groups := make([]Group, 0, len(selectors))
 		for _, selector := range selectors {
 			current := ""
 			if len(selector.Options) > 0 {
 				current = selector.Options[0]
+			}
+			for _, option := range selector.Options {
+				if option == selected[selector.Name] {
+					current = option
+					break
+				}
 			}
 			groups = append(groups, Group{Name: selector.Name, Current: current, Options: selector.Options})
 		}
@@ -419,8 +434,16 @@ func (r *Runner) Select(group, option string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.state.Status != "running" {
-		return errors.New("内核尚未运行")
+		return r.store.SelectOption(group, option)
 	}
+	if err := r.selectController(group, option); err != nil {
+		return err
+	}
+	return r.store.SelectOption(group, option)
+}
+
+// selectController is called with the runner mutex held.
+func (r *Runner) selectController(group, option string) error {
 	var response struct {
 		Proxies map[string]struct {
 			Type string   `json:"type"`

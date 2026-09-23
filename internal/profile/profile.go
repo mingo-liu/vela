@@ -104,6 +104,9 @@ func (s *Store) SelectorGroups() ([]SelectorGroup, error) {
 		return nil, err
 	}
 	var config struct {
+		Proxies []struct {
+			Name string `yaml:"name"`
+		} `yaml:"proxies"`
 		Groups []struct {
 			Name    string   `yaml:"name"`
 			Type    string   `yaml:"type"`
@@ -114,10 +117,27 @@ func (s *Store) SelectorGroups() ([]SelectorGroup, error) {
 		return nil, fmt.Errorf("无法读取策略组: %w", err)
 	}
 	groups := make([]SelectorGroup, 0)
+	globalOptions := make([]string, 0, len(config.Proxies)+len(config.Groups)+2)
+	seen := make(map[string]bool)
+	addGlobal := func(name string) {
+		if name != "" && name != "GLOBAL" && !seen[name] {
+			globalOptions = append(globalOptions, name)
+			seen[name] = true
+		}
+	}
+	for _, proxy := range config.Proxies {
+		addGlobal(proxy.Name)
+	}
 	for _, group := range config.Groups {
+		addGlobal(group.Name)
 		if strings.EqualFold(group.Type, "select") {
 			groups = append(groups, SelectorGroup{Name: group.Name, Options: group.Proxies})
 		}
+	}
+	if len(globalOptions) > 0 {
+		addGlobal("DIRECT")
+		addGlobal("REJECT")
+		groups = append(groups, SelectorGroup{Name: "GLOBAL", Options: globalOptions})
 	}
 	return groups, nil
 }
