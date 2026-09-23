@@ -32,6 +32,14 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? '未提供' : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function subscriptionDomain(address: string): string {
+  try {
+    return new URL(address).hostname || '未知域名'
+  } catch {
+    return '未知域名'
+  }
+}
+
 function SortModeIcon({ mode }: { mode: SortMode }) {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {mode === 'name' ? <>
@@ -268,13 +276,14 @@ export default function App() {
               {subscriptions.map(subscription => {
                 const remaining = subscription.total !== null && subscription.upload !== null && subscription.download !== null
                   ? Math.max(0, subscription.total - subscription.upload - subscription.download) : null
+                const domain = subscriptionDomain(subscription.url)
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
                     <span className={`subscription-status${subscription.active ? ' active' : ''}`}>{subscription.active ? '当前' : '已保存'}</span>
                     <button className="subscription-refresh" type="button" disabled={busy || running} aria-label={subscription.active ? '更新此订阅' : '更新并设为当前配置'} title={subscription.active ? '更新此订阅' : '更新并设为当前配置'} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                   </div>
-                  <button className="subscription-select" type="button" aria-label={`选择订阅 ${subscription.url}`} aria-pressed={subscription.active} disabled={busy || running || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
-                    <span className="subscription-url" title={subscription.url}><LinkSimple size={15} /><span>{subscription.url}</span></span>
+                  <button className="subscription-select" type="button" aria-label={`选择订阅 ${domain}`} aria-pressed={subscription.active} disabled={busy || running || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
+                    <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
                     <span className="subscription-usage"><span>剩余 <strong>{formatBytes(remaining)}</strong></span><span>总量 <strong>{formatBytes(subscription.total)}</strong></span></span>
                     <span className="subscription-dates"><span>到期 {formatDate(subscription.expiresAt)}</span><span>更新 {formatDate(subscription.updatedAt)}</span></span>
                   </button>
@@ -283,7 +292,7 @@ export default function App() {
             </div>
           </section>
           <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><FileArrowUp size={24} /></div><div><h2>本地配置</h2><p>导入包含节点和规则的 mihomo YAML 文件。</p></div></div><button className="file-button" type="button" disabled={busy || running} onClick={() => fileInput.current?.click()}>选择 YAML 文件 <FileArrowUp size={18} /></button><input ref={fileInput} className="file-input" type="file" accept=".yaml,.yml,text/yaml" tabIndex={-1} onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} /><small className="hint">导入新配置前，请先关闭系统代理。文件大小上限为 2 MiB。</small></section>
-          <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>导入订阅</h2><p>从 HTTP 或 HTTPS 地址导入配置。</p></div></div><label className="field-label" htmlFor="subscription-url">订阅链接</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={busy || running} autoComplete="off" spellCheck={false} placeholder="粘贴 HTTP / HTTPS 订阅地址" onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button" type="button" disabled={busy || running || !subscriptionURL} onClick={() => void importSubscription()}>导入订阅 <ArrowRight size={17} /></button></div><small className="hint">订阅地址保存在 macOS Keychain，并显示在上方的订阅卡片中。</small>{subscriptionURL.startsWith('http://') && <small className="http-note">此地址使用 HTTP，访问令牌会在网络上传输明文。</small>}</section>
+          <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>导入订阅</h2><p>从 HTTP 或 HTTPS 地址导入配置。</p></div></div><label className="field-label" htmlFor="subscription-url">订阅链接</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={busy || running} autoComplete="off" spellCheck={false} placeholder="粘贴 HTTP / HTTPS 订阅地址" onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button" type="button" disabled={busy || running || !subscriptionURL} onClick={() => void importSubscription()}>导入订阅 <ArrowRight size={17} /></button></div><small className="hint">订阅地址保存在 macOS Keychain，卡片中仅显示域名。</small>{subscriptionURL.startsWith('http://') && <small className="http-note">此地址使用 HTTP，访问令牌会在网络上传输明文。</small>}</section>
         </div>
       </>}
       <footer>关闭窗口后 Vela 会留在菜单栏；退出应用时恢复系统代理设置。</footer>

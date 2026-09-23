@@ -107,7 +107,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .profile-stack { display: grid; gap: 17px; }
 .profile-card { padding: 27px 30px; }
 .subscription-empty { padding: 24px 28px; color: #62666d; font-size: 12px; }
-.subscription-grid { display: grid; grid-template-columns: repeat(auto-fill, min(100%, 320px)); gap: 12px; }
+.subscription-grid { display: grid; grid-template-columns: repeat(auto-fill, min(100%, 220px)); gap: 12px; }
 .subscription-card { position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px; }
 .subscription-card.selected { border-color: #f4a6b6; }
 .subscription-card.selected .subscription-select { opacity: 1; }
@@ -123,7 +123,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
 .subscription-url { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: #24272d; font-size: 12px; line-height: 1.4; user-select: text; }
 .subscription-url svg { flex: none; margin-top: 1px; color: #f31645; }
-.subscription-url span { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.subscription-url span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subscription-usage { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 9px; border-top: 1px solid #eceef1; color: #7a7d84; font-size: 11px; }
 .subscription-usage strong { margin-left: 3px; color: #24272d; font-size: 12px; }
 .subscription-dates { display: grid; gap: 3px; color: #7a7d84; font-size: 11px; }
