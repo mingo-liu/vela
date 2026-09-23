@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, PlugsConnected, Stack, WifiMedium } from '@phosphor-icons/react'
+import velaIcon from '../../build/appicon.icon/Assets/vela_icon.svg'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
@@ -211,7 +212,7 @@ export default function App() {
 
   return <div className="app-layout">
     <aside className="sidebar" aria-label="主导航">
-      <div className="brand"><div className="brand-icon"><PlugsConnected size={24} weight="bold" /></div><div><strong>Vela</strong></div></div>
+      <div className="brand"><img className="brand-icon" src={velaIcon} alt="" /><div><strong>Vela</strong></div></div>
       <nav className="navigation" aria-label="页面">
         {navigation.map(item => <button key={item.id} type="button" className={`nav-item${page === item.id ? ' active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><item.icon size={25} weight="regular" /><span>{item.label}</span></button>)}
       </nav>

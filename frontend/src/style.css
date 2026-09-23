@@ -9,7 +9,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .app-layout { display: flex; min-height: 100vh; }
 .sidebar { width: clamp(225px, 27vw, 500px); flex: 0 0 clamp(225px, 27vw, 500px); display: flex; flex-direction: column; padding: 28px 15px 22px; background: #f5f6f8; border-right: 1px solid #eaebee; }
 .brand { display: flex; align-items: center; gap: 13px; padding: 3px 14px 32px; }
-.brand-icon { width: 42px; height: 42px; display: grid; place-items: center; border: 2px solid #f31645; border-radius: 13px; color: #f31645; }
+.brand-icon { display: block; width: 42px; height: 42px; flex: none; }
 .brand strong { display: block; font-size: 23px; letter-spacing: -.045em; }
 .navigation { display: grid; gap: 7px; }
 .nav-item { width: 100%; display: flex; align-items: center; gap: 17px; min-height: 55px; padding: 0 16px; border: 0; border-radius: 15px; background: transparent; color: #171a20; text-align: left; font-size: clamp(18px, 1.8vw, 31px); font-weight: 550; }
