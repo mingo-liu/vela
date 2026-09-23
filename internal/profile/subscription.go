@@ -115,7 +115,7 @@ func (s *Subscriptions) save(catalog subscriptionCatalog) error {
 		return err
 	}
 	if err := s.urls.Put(string(data)); err != nil {
-		return fmt.Errorf("无法保存订阅记录到 Keychain: %w", err)
+		return fmt.Errorf("无法保存订阅记录: %w", err)
 	}
 	return nil
 }

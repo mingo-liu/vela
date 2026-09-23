@@ -24,7 +24,7 @@ func Run(assets fs.FS) error {
 		return err
 	}
 	store := profile.NewStore(dataDir)
-	subs := profile.NewSubscriptions(store, macos.SubscriptionKeychain{})
+	subs := profile.NewSubscriptions(store, profile.NewFileURLStore(dataDir, macos.SubscriptionKeychain{}))
 	binary := findBinary()
 	var wails *application.App
 	var systemProxyMenuItem *application.MenuItem
