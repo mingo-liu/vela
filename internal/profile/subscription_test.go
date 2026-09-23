@@ -43,8 +43,11 @@ func TestSubscriptionImportAndUpdateKeepLastGoodProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := subs.List()
-	if err != nil || len(list) != 1 || list[0].URL != address || !list[0].Active {
+	if err != nil || len(list) != 1 || list[0].URL != address || list[0].Active || store.Exists() {
 		t.Fatalf("subscription was not saved: %+v, %v", list, err)
+	}
+	if err := subs.Select(context.Background(), list[0].ID); err != nil {
+		t.Fatal(err)
 	}
 	body = "listeners: [{name: unsafe, type: mixed, port: 9999}]\n"
 	if err := subs.Update(context.Background(), list[0].ID); err == nil {
@@ -112,7 +115,7 @@ func TestSubscriptionCardsAndLegacyMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := subs.List()
-	if err != nil || len(list) != 2 || list[0].Active || !list[1].Active {
+	if err != nil || len(list) != 2 || !list[0].Active || list[1].Active {
 		t.Fatalf("imported entries: %+v, %v", list, err)
 	}
 	if list[0].Upload == nil || *list[0].Upload != 10 || list[0].Download == nil || *list[0].Download != 20 || list[0].Total == nil || *list[0].Total != 100 || list[0].ExpiresAt == nil || list[0].ExpiresAt.Unix() != 2000000000 || list[0].UpdatedAt == nil {
@@ -157,7 +160,7 @@ func TestImportSameSubscriptionURLCreatesIndependentEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := subs.List()
-	if err != nil || len(list) != 2 || list[0].ID == list[1].ID || list[0].URL != address || list[1].URL != address || list[0].Active || !list[1].Active {
+	if err != nil || len(list) != 2 || list[0].ID == list[1].ID || list[0].URL != address || list[1].URL != address || list[0].Active || list[1].Active || store.Exists() {
 		t.Fatalf("duplicate imports: %+v, %v", list, err)
 	}
 	if err := subs.Select(context.Background(), list[0].ID); err != nil {
@@ -205,8 +208,8 @@ func TestSelectSubscriptionUsesCachedProfileOffline(t *testing.T) {
 	}
 	server.Close()
 	list, err := subs.List()
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(list) != 2 || list[0].Active || list[1].Active || store.Exists() {
+		t.Fatalf("imports changed active profile: %+v, %v", list, err)
 	}
 	if err := subs.Select(context.Background(), list[0].ID); err != nil {
 		t.Fatal(err)
@@ -216,7 +219,7 @@ func TestSelectSubscriptionUsesCachedProfileOffline(t *testing.T) {
 		t.Fatalf("selected first subscription: %+v, %v", groups, err)
 	}
 	list, err = subs.List()
-	if err != nil || !list[0].Active || list[1].Active {
+	if err != nil || len(list) != 2 || !list[0].Active || list[1].Active {
 		t.Fatalf("active subscription: %+v, %v", list, err)
 	}
 	if err := subs.Select(context.Background(), list[1].ID); err != nil {
@@ -241,7 +244,14 @@ func TestLegacyActiveSubscriptionIsCachedBeforeSwitch(t *testing.T) {
 	if err := subs.Import(context.Background(), server.URL+"/new"); err != nil {
 		t.Fatal(err)
 	}
+	list, err := subs.List()
+	if err != nil || !list[0].Active || list[1].Active {
+		t.Fatalf("import changed legacy selection: %+v, %v", list, err)
+	}
 	server.Close()
+	if err := subs.Select(context.Background(), list[1].ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := subs.Select(context.Background(), subscriptionID(server.URL+"/legacy")); err != nil {
 		t.Fatal(err)
 	}

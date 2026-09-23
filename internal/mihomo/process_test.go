@@ -182,6 +182,82 @@ func TestSelectSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	}
 }
 
+func TestImportSubscriptionWhileSystemProxyEnabled(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to run the real core integration test")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := "Two"
+		switch r.URL.Path {
+		case "/three":
+			name = "Three"
+		case "/invalid":
+			_, _ = w.Write([]byte("listeners: [{name: unsafe, type: mixed, port: 9999}]\n"))
+			return
+		}
+		_, _ = w.Write([]byte("proxy-groups:\n  - name: " + name + "\n    type: select\n    proxies: [DIRECT, REJECT]\nrules:\n  - MATCH,DIRECT\n"))
+	}))
+	defer server.Close()
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	subs := profile.NewSubscriptions(store, &testURLStore{})
+	systemProxy := &testSystemProxy{}
+	runner := NewRunner(store, subs, dir, binary, port, systemProxy, nil)
+	t.Cleanup(runner.Close)
+	if _, err := runner.Import("proxy-groups:\n  - name: One\n    type: select\n    proxies: [DIRECT, REJECT]\nrules:\n  - MATCH,DIRECT\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.SetSystemProxy(true); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runner.ImportSubscription(server.URL + "/two")
+	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("import while connected: %+v, %v", state, err)
+	}
+	groups, err := runner.Groups()
+	if err != nil || !hasGroup(groups, "One") || hasGroup(groups, "Two") {
+		t.Fatalf("import changed running config: %+v, %v", groups, err)
+	}
+	list, err := subs.List()
+	if err != nil || len(list) != 1 || list[0].Active {
+		t.Fatalf("import activated new subscription: %+v, %v", list, err)
+	}
+	if state, err = runner.ImportSubscription(server.URL + "/invalid"); err == nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("invalid import changed connection: %+v, %v", state, err)
+	}
+	list, err = subs.List()
+	if err != nil || len(list) != 1 || list[0].Active {
+		t.Fatalf("invalid import changed subscriptions: %+v, %v", list, err)
+	}
+	if state, err = runner.SelectSubscription(list[0].ID); err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("manual selection failed: %+v, %v", state, err)
+	}
+	groups, err = runner.Groups()
+	if err != nil || !hasGroup(groups, "Two") || hasGroup(groups, "One") {
+		t.Fatalf("manual selection did not apply config: %+v, %v", groups, err)
+	}
+	if state, err = runner.ImportSubscription(server.URL + "/three"); err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("second import while connected: %+v, %v", state, err)
+	}
+	list, err = subs.List()
+	if err != nil || len(list) != 2 || !list[0].Active || list[1].Active {
+		t.Fatalf("second import changed selection: %+v, %v", list, err)
+	}
+	groups, err = runner.Groups()
+	if err != nil || !hasGroup(groups, "Two") || hasGroup(groups, "Three") {
+		t.Fatalf("second import changed running config: %+v, %v", groups, err)
+	}
+	files, err := os.ReadDir(filepath.Join(dir, "subscriptions"))
+	if err != nil || len(files) != 2 {
+		t.Fatalf("imported profiles were not cached: %d, %v", len(files), err)
+	}
+}
+
 func hasGroup(groups []Group, name string) bool {
 	for _, group := range groups {
 		if group.Name == name {

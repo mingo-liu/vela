@@ -47,6 +47,14 @@ func (s *Store) LoadSubscription(id string) ([]byte, error) {
 	return data, nil
 }
 
+func (s *Store) DeleteSubscription(id string) error {
+	err := os.Remove(filepath.Join(filepath.Dir(s.path), "subscriptions", id+".yaml"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 func writeProfile(path, data string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err

@@ -161,7 +161,7 @@ func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	if err := validateSubscription(data); err != nil {
 		return err
 	}
-	catalog, raw, err := s.catalog()
+	catalog, _, err := s.catalog()
 	if err != nil {
 		return err
 	}
@@ -172,19 +172,13 @@ func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	if err != nil {
 		return err
 	}
-	for i := range catalog.Subscriptions {
-		catalog.Subscriptions[i].Active = false
-	}
-	info.ID, info.URL, info.Active = id, address, true
+	info.ID, info.URL, info.Active = id, address, false
 	catalog.Subscriptions = append(catalog.Subscriptions, info)
 	if err := s.profiles.SaveSubscription(id, string(data)); err != nil {
 		return err
 	}
 	if err := s.save(catalog); err != nil {
-		return err
-	}
-	if err := s.profiles.Import(string(data)); err != nil {
-		s.restore(raw)
+		_ = s.profiles.DeleteSubscription(id)
 		return err
 	}
 	return nil

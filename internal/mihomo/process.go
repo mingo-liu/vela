@@ -105,14 +105,9 @@ func (r *Runner) ImportSubscription(address string) (State, error) {
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cmd != nil {
-		return r.state, errors.New("请先停止内核再导入订阅")
-	}
 	if err := r.subs.Import(context.Background(), address); err != nil {
 		return r.state, err
 	}
-	r.state.HasProfile, r.state.Error = true, ""
-	r.emit()
 	return r.state, nil
 }
 
