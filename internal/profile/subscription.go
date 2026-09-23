@@ -2,6 +2,7 @@ package profile
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -67,6 +68,26 @@ func subscriptionID(address string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func newSubscriptionID(catalog subscriptionCatalog) (string, error) {
+	for {
+		var bytes [16]byte
+		if _, err := rand.Read(bytes[:]); err != nil {
+			return "", err
+		}
+		id := hex.EncodeToString(bytes[:])
+		found := false
+		for _, subscription := range catalog.Subscriptions {
+			if subscription.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return id, nil
+		}
+	}
+}
+
 func (s *Subscriptions) catalog() (subscriptionCatalog, string, error) {
 	raw, err := s.urls.Get()
 	if errors.Is(err, ErrNoSubscription) {
@@ -117,7 +138,7 @@ func (s *Subscriptions) preserveActive(catalog subscriptionCatalog) error {
 		if !subscription.Active || !s.profiles.Exists() {
 			continue
 		}
-		id := subscriptionID(subscription.URL)
+		id := subscription.ID
 		if _, err := s.profiles.LoadSubscription(id); err == nil {
 			return nil
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -147,22 +168,16 @@ func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	if err := s.preserveActive(catalog); err != nil {
 		return err
 	}
+	id, err := newSubscriptionID(catalog)
+	if err != nil {
+		return err
+	}
 	for i := range catalog.Subscriptions {
 		catalog.Subscriptions[i].Active = false
 	}
-	info.ID, info.URL, info.Active = subscriptionID(address), address, true
-	found := false
-	for i := range catalog.Subscriptions {
-		if catalog.Subscriptions[i].ID == info.ID {
-			catalog.Subscriptions[i] = info
-			found = true
-			break
-		}
-	}
-	if !found {
-		catalog.Subscriptions = append(catalog.Subscriptions, info)
-	}
-	if err := s.profiles.SaveSubscription(subscriptionID(address), string(data)); err != nil {
+	info.ID, info.URL, info.Active = id, address, true
+	catalog.Subscriptions = append(catalog.Subscriptions, info)
+	if err := s.profiles.SaveSubscription(id, string(data)); err != nil {
 		return err
 	}
 	if err := s.save(catalog); err != nil {
@@ -229,7 +244,7 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 	}
 	info.ID, info.URL, info.Active = id, catalog.Subscriptions[index].URL, true
 	catalog.Subscriptions[index] = info
-	if err := s.profiles.SaveSubscription(subscriptionID(info.URL), string(data)); err != nil {
+	if err := s.profiles.SaveSubscription(id, string(data)); err != nil {
 		return err
 	}
 	if err := s.save(catalog); err != nil {
@@ -263,7 +278,7 @@ func (s *Subscriptions) Select(ctx context.Context, id string) error {
 	if catalog.Subscriptions[index].Active {
 		return nil
 	}
-	data, err := s.profiles.LoadSubscription(subscriptionID(catalog.Subscriptions[index].URL))
+	data, err := s.profiles.LoadSubscription(id)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err

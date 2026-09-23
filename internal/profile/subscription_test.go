@@ -105,10 +105,7 @@ func TestSubscriptionCardsAndLegacyMigration(t *testing.T) {
 	if err != nil || len(legacy) != 1 || legacy[0].UpdatedAt != nil {
 		t.Fatalf("legacy entry: %+v, %v", legacy, err)
 	}
-	if err := subs.Import(context.Background(), server.URL+"/one"); err != nil {
-		t.Fatal(err)
-	}
-	if err := subs.Import(context.Background(), server.URL+"/two"); err != nil {
+	if err := subs.Update(context.Background(), legacy[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := subs.Import(context.Background(), server.URL+"/two"); err != nil {
@@ -140,6 +137,53 @@ func TestSubscriptionCardsAndLegacyMigration(t *testing.T) {
 	}
 	if list[0].UpdatedAt.After(time.Now()) {
 		t.Fatal("invalid update time")
+	}
+}
+
+func TestImportSameSubscriptionURLCreatesIndependentEntries(t *testing.T) {
+	body := "proxy-groups:\n  - name: One\n    type: select\n    proxies: [DIRECT]\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+	store := NewStore(t.TempDir())
+	subs := NewSubscriptions(store, &memoryURLStore{})
+	address := server.URL + "/same"
+	if err := subs.Import(context.Background(), address); err != nil {
+		t.Fatal(err)
+	}
+	body = "proxy-groups:\n  - name: Two\n    type: select\n    proxies: [REJECT]\n"
+	if err := subs.Import(context.Background(), address); err != nil {
+		t.Fatal(err)
+	}
+	list, err := subs.List()
+	if err != nil || len(list) != 2 || list[0].ID == list[1].ID || list[0].URL != address || list[1].URL != address || list[0].Active || !list[1].Active {
+		t.Fatalf("duplicate imports: %+v, %v", list, err)
+	}
+	if err := subs.Select(context.Background(), list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := store.SelectorGroups()
+	if err != nil || groups[0].Name != "One" {
+		t.Fatalf("first cached profile: %+v, %v", groups, err)
+	}
+	body = "proxy-groups:\n  - name: Three\n    type: select\n    proxies: [DIRECT, REJECT]\n"
+	if err := subs.Update(context.Background(), list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Select(context.Background(), list[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = store.SelectorGroups()
+	if err != nil || groups[0].Name != "Two" {
+		t.Fatalf("second cached profile changed by first update: %+v, %v", groups, err)
+	}
+	if err := subs.Select(context.Background(), list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = store.SelectorGroups()
+	if err != nil || groups[0].Name != "Three" {
+		t.Fatalf("updated first profile: %+v, %v", groups, err)
 	}
 }
 
