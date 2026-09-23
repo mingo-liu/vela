@@ -114,7 +114,13 @@ func (r *Runner) ImportSubscription(address string) (State, error) {
 	return r.state, nil
 }
 
-func (r *Runner) UpdateSubscription() (State, error) {
+func (r *Runner) Subscriptions() ([]profile.Subscription, error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	return r.subs.List()
+}
+
+func (r *Runner) UpdateSubscription(id string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
@@ -122,7 +128,7 @@ func (r *Runner) UpdateSubscription() (State, error) {
 	if r.cmd != nil {
 		return r.state, errors.New("请先停止内核再更新订阅")
 	}
-	if err := r.subs.Update(context.Background()); err != nil {
+	if err := r.subs.Update(context.Background(), id); err != nil {
 		return r.state, err
 	}
 	r.state.HasProfile, r.state.Error = true, ""

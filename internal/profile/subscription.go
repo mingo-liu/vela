@@ -2,13 +2,17 @@ package profile
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,6 +21,21 @@ type URLStore interface {
 	Get() (string, error)
 	Put(string) error
 	Delete() error
+}
+
+type Subscription struct {
+	ID        string     `json:"id"`
+	URL       string     `json:"url"`
+	Active    bool       `json:"active"`
+	UpdatedAt *time.Time `json:"updatedAt"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+	Upload    *int64     `json:"upload"`
+	Download  *int64     `json:"download"`
+	Total     *int64     `json:"total"`
+}
+
+type subscriptionCatalog struct {
+	Subscriptions []Subscription `json:"subscriptions"`
 }
 
 type Subscriptions struct {
@@ -42,27 +61,88 @@ func NewSubscriptions(profiles *Store, urls URLStore) *Subscriptions {
 	return &Subscriptions{profiles: profiles, urls: urls, client: client}
 }
 
+func subscriptionID(address string) string {
+	sum := sha256.Sum256([]byte(address))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Subscriptions) catalog() (subscriptionCatalog, string, error) {
+	raw, err := s.urls.Get()
+	if errors.Is(err, ErrNoSubscription) {
+		return subscriptionCatalog{Subscriptions: []Subscription{}}, "", nil
+	}
+	if err != nil {
+		return subscriptionCatalog{}, "", err
+	}
+	if !strings.HasPrefix(raw, "{") {
+		return subscriptionCatalog{Subscriptions: []Subscription{{ID: subscriptionID(raw), URL: raw, Active: true}}}, raw, nil
+	}
+	var catalog subscriptionCatalog
+	if err := json.Unmarshal([]byte(raw), &catalog); err != nil {
+		return subscriptionCatalog{}, "", errors.New("无法读取已保存的订阅记录")
+	}
+	if catalog.Subscriptions == nil {
+		catalog.Subscriptions = []Subscription{}
+	}
+	return catalog, raw, nil
+}
+
+func (s *Subscriptions) save(catalog subscriptionCatalog) error {
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		return err
+	}
+	if err := s.urls.Put(string(data)); err != nil {
+		return fmt.Errorf("无法保存订阅记录到 Keychain: %w", err)
+	}
+	return nil
+}
+
+func (s *Subscriptions) restore(raw string) {
+	if raw == "" {
+		_ = s.urls.Delete()
+	} else {
+		_ = s.urls.Put(raw)
+	}
+}
+
+func (s *Subscriptions) List() ([]Subscription, error) {
+	catalog, _, err := s.catalog()
+	return catalog.Subscriptions, err
+}
+
 func (s *Subscriptions) Import(ctx context.Context, address string) error {
-	data, err := s.fetch(ctx, address)
+	data, info, err := s.fetch(ctx, address)
 	if err != nil {
 		return err
 	}
 	if err := validateSubscription(data); err != nil {
 		return err
 	}
-	previous, previousErr := s.urls.Get()
-	if previousErr != nil && !errors.Is(previousErr, ErrNoSubscription) {
-		return previousErr
+	catalog, raw, err := s.catalog()
+	if err != nil {
+		return err
 	}
-	if err := s.urls.Put(address); err != nil {
-		return fmt.Errorf("无法保存订阅地址到 Keychain: %w", err)
+	for i := range catalog.Subscriptions {
+		catalog.Subscriptions[i].Active = false
+	}
+	info.ID, info.URL, info.Active = subscriptionID(address), address, true
+	found := false
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID == info.ID {
+			catalog.Subscriptions[i] = info
+			found = true
+			break
+		}
+	}
+	if !found {
+		catalog.Subscriptions = append(catalog.Subscriptions, info)
+	}
+	if err := s.save(catalog); err != nil {
+		return err
 	}
 	if err := s.profiles.Import(string(data)); err != nil {
-		if previousErr == nil {
-			_ = s.urls.Put(previous)
-		} else {
-			_ = s.urls.Delete()
-		}
+		s.restore(raw)
 		return err
 	}
 	return nil
@@ -72,35 +152,58 @@ func (s *Subscriptions) ImportLocal(data string) error {
 	if _, err := Compile([]byte(data), 7890, 9090, "validation-secret"); err != nil {
 		return err
 	}
-	previous, previousErr := s.urls.Get()
-	if previousErr != nil && !errors.Is(previousErr, ErrNoSubscription) {
-		return previousErr
+	catalog, raw, err := s.catalog()
+	if err != nil {
+		return err
 	}
-	if err := s.urls.Delete(); err != nil {
+	for i := range catalog.Subscriptions {
+		catalog.Subscriptions[i].Active = false
+	}
+	if err := s.save(catalog); err != nil {
 		return err
 	}
 	if err := s.profiles.Import(data); err != nil {
-		if previousErr == nil {
-			_ = s.urls.Put(previous)
-		}
+		s.restore(raw)
 		return err
 	}
 	return nil
 }
 
-func (s *Subscriptions) Update(ctx context.Context) error {
-	address, err := s.urls.Get()
+func (s *Subscriptions) Update(ctx context.Context, id string) error {
+	catalog, raw, err := s.catalog()
 	if err != nil {
 		return err
 	}
-	data, err := s.fetch(ctx, address)
+	index := -1
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return ErrNoSubscription
+	}
+	data, info, err := s.fetch(ctx, catalog.Subscriptions[index].URL)
 	if err != nil {
 		return err
 	}
 	if err := validateSubscription(data); err != nil {
 		return err
 	}
-	return s.profiles.Import(string(data))
+	for i := range catalog.Subscriptions {
+		catalog.Subscriptions[i].Active = i == index
+	}
+	info.ID, info.URL, info.Active = id, catalog.Subscriptions[index].URL, true
+	catalog.Subscriptions[index] = info
+	if err := s.save(catalog); err != nil {
+		return err
+	}
+	if err := s.profiles.Import(string(data)); err != nil {
+		s.restore(raw)
+		return err
+	}
+	return nil
 }
 
 func validateSubscription(data []byte) error {
@@ -142,38 +245,66 @@ func isBase64NodeList(data []byte) bool {
 
 var ErrNoSubscription = errors.New("尚未保存订阅地址")
 
-func (s *Subscriptions) fetch(ctx context.Context, address string) ([]byte, error) {
+func subscriptionInfo(header http.Header) Subscription {
+	now := time.Now().UTC()
+	info := Subscription{UpdatedAt: &now}
+	for _, item := range strings.Split(header.Get("Subscription-Userinfo"), ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(item), "=")
+		if !ok {
+			continue
+		}
+		number, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || number < 0 {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "upload":
+			info.Upload = &number
+		case "download":
+			info.Download = &number
+		case "total":
+			info.Total = &number
+		case "expire":
+			if number > 0 {
+				expiry := time.Unix(number, 0).UTC()
+				info.ExpiresAt = &expiry
+			}
+		}
+	}
+	return info
+}
+
+func (s *Subscriptions) fetch(ctx context.Context, address string) ([]byte, Subscription, error) {
 	if len(address) == 0 || len(address) > 4096 {
-		return nil, errors.New("订阅地址长度无效")
+		return nil, Subscription{}, errors.New("订阅地址长度无效")
 	}
 	u, err := url.Parse(address)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
-		return nil, errors.New("订阅地址必须是有效的 HTTP 或 HTTPS URL")
+		return nil, Subscription{}, errors.New("订阅地址必须是有效的 HTTP 或 HTTPS URL")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, errors.New("无法创建订阅请求")
+		return nil, Subscription{}, errors.New("无法创建订阅请求")
 	}
 	request.Header.Set("Accept", "application/yaml, text/yaml, text/plain, */*")
-	// Many subscription servers select the response format from User-Agent.
 	request.Header.Set("User-Agent", "Clash.Meta")
 	response, err := s.client.Do(request)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return nil, errors.New("订阅下载超时或已取消")
+			return nil, Subscription{}, errors.New("订阅下载超时或已取消")
 		}
-		return nil, errors.New("订阅下载失败，请检查地址和网络连接")
+		return nil, Subscription{}, errors.New("订阅下载失败，请检查地址和网络连接")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("订阅服务器返回 HTTP %d", response.StatusCode)
+		return nil, Subscription{}, fmt.Errorf("订阅服务器返回 HTTP %d", response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, MaxConfigSize+1))
 	if err != nil {
-		return nil, errors.New("读取订阅内容失败")
+		return nil, Subscription{}, errors.New("读取订阅内容失败")
 	}
 	if len(data) > MaxConfigSize {
-		return nil, errors.New("订阅内容超过 2 MiB")
+		return nil, Subscription{}, errors.New("订阅内容超过 2 MiB")
 	}
-	return data, nil
+	return data, subscriptionInfo(response.Header), nil
 }

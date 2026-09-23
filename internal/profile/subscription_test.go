@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type memoryURLStore struct{ value string }
@@ -41,12 +42,17 @@ func TestSubscriptionImportAndUpdateKeepLastGoodProfile(t *testing.T) {
 	if err := subs.Import(context.Background(), address); err != nil {
 		t.Fatal(err)
 	}
-	if keychain.value != address {
-		t.Fatal("subscription URL was not saved")
+	list, err := subs.List()
+	if err != nil || len(list) != 1 || list[0].URL != address || !list[0].Active {
+		t.Fatalf("subscription was not saved: %+v, %v", list, err)
 	}
 	body = "listeners: [{name: unsafe, type: mixed, port: 9999}]\n"
-	if err := subs.Update(context.Background()); err == nil {
+	if err := subs.Update(context.Background(), list[0].ID); err == nil {
 		t.Fatal("invalid update was accepted")
+	}
+	stillSaved, err := subs.List()
+	if err != nil || len(stillSaved) != 1 || stillSaved[0].UpdatedAt == nil || !stillSaved[0].UpdatedAt.Equal(*list[0].UpdatedAt) {
+		t.Fatalf("failed update changed the subscription: %+v, %v", stillSaved, err)
 	}
 	got, err := store.Load()
 	if err != nil || string(got) != "proxies: []\nrules:\n  - MATCH,DIRECT\n" {
@@ -64,7 +70,7 @@ func TestSubscriptionReportsBase64NodeList(t *testing.T) {
 func TestSubscriptionDownloadErrorDoesNotExposeToken(t *testing.T) {
 	store := NewStore(t.TempDir())
 	subs := NewSubscriptions(store, &memoryURLStore{})
-	_, err := subs.fetch(context.Background(), "http://127.0.0.1:1/sub?token=private-token")
+	_, _, err := subs.fetch(context.Background(), "http://127.0.0.1:1/sub?token=private-token")
 	if err == nil || strings.Contains(err.Error(), "private-token") {
 		t.Fatalf("unsafe download error: %v", err)
 	}
@@ -79,7 +85,60 @@ func TestSubscriptionRejectsLargeResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	subs := NewSubscriptions(NewStore(t.TempDir()), &memoryURLStore{})
-	if _, err := subs.fetch(context.Background(), server.URL); err == nil {
+	if _, _, err := subs.fetch(context.Background(), server.URL); err == nil {
 		t.Fatal("oversize response accepted")
+	}
+}
+
+func TestSubscriptionCardsAndLegacyMigration(t *testing.T) {
+	const body = "proxies: []\nrules:\n  - MATCH,DIRECT\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/one" {
+			w.Header().Set("Subscription-Userinfo", "upload=10; download=20; total=100; expire=2000000000")
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+	keychain := &memoryURLStore{value: server.URL + "/one"}
+	subs := NewSubscriptions(NewStore(t.TempDir()), keychain)
+	legacy, err := subs.List()
+	if err != nil || len(legacy) != 1 || legacy[0].UpdatedAt != nil {
+		t.Fatalf("legacy entry: %+v, %v", legacy, err)
+	}
+	if err := subs.Import(context.Background(), server.URL+"/one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Import(context.Background(), server.URL+"/two"); err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Import(context.Background(), server.URL+"/two"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := subs.List()
+	if err != nil || len(list) != 2 || list[0].Active || !list[1].Active {
+		t.Fatalf("imported entries: %+v, %v", list, err)
+	}
+	if list[0].Upload == nil || *list[0].Upload != 10 || list[0].Download == nil || *list[0].Download != 20 || list[0].Total == nil || *list[0].Total != 100 || list[0].ExpiresAt == nil || list[0].ExpiresAt.Unix() != 2000000000 || list[0].UpdatedAt == nil {
+		t.Fatalf("missing usage information: %+v", list[0])
+	}
+	if list[1].Total != nil || list[1].ExpiresAt != nil {
+		t.Fatalf("missing headers should remain unknown: %+v", list[1])
+	}
+	if err := subs.Update(context.Background(), list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	list, err = subs.List()
+	if err != nil || !list[0].Active || list[1].Active || len(list) != 2 {
+		t.Fatalf("updated entries: %+v, %v", list, err)
+	}
+	if err := subs.ImportLocal(body); err != nil {
+		t.Fatal(err)
+	}
+	list, err = subs.List()
+	if err != nil || list[0].Active || list[1].Active {
+		t.Fatalf("local import should keep inactive subscriptions: %+v, %v", list, err)
+	}
+	if list[0].UpdatedAt.After(time.Now()) {
+		t.Fatal("invalid update time")
 	}
 }

@@ -76,6 +76,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .proxy-row select { width: min(48%, 250px); padding: 10px 12px; border: 1px solid #dfe1e5; border-radius: 10px; background: #f9fafb; color: #25282e; font-size: 12px; }
 .profile-stack { display: grid; gap: 17px; }
 .profile-card { padding: 27px 30px; }
+.subscription-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.subscription-section-heading h2 { margin: 0; font-size: 18px; letter-spacing: -.025em; }
+.subscription-section-heading span { color: #7a7d84; font-size: 12px; }
+.subscription-empty { padding: 24px 28px; color: #62666d; font-size: 12px; }
+.subscription-grid { display: grid; grid-template-columns: repeat(auto-fill, min(100%, 320px)); gap: 12px; }
+.subscription-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px; }
+.subscription-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.subscription-status { border-radius: 50px; padding: 4px 8px; background: #f1f2f4; color: #777b82; font-size: 10px; font-weight: 700; }
+.subscription-status.active { color: #25885e; background: #edf9f2; }
+.subscription-refresh { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
+.subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
+.subscription-url { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: #24272d; font-size: 12px; line-height: 1.4; user-select: text; }
+.subscription-url svg { flex: none; margin-top: 1px; color: #f31645; }
+.subscription-url span { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.subscription-usage { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 9px; border-top: 1px solid #eceef1; color: #7a7d84; font-size: 11px; }
+.subscription-usage strong { margin-left: 3px; color: #24272d; font-size: 12px; }
+.subscription-dates { display: grid; gap: 3px; color: #7a7d84; font-size: 11px; }
 .file-button { display: inline-flex; align-items: center; gap: 11px; margin-top: 25px; padding: 11px 15px; border: 1px solid #f31645; border-radius: 11px; color: #e91543; font-size: 12px; font-weight: 700; cursor: pointer; }
 .file-input { display: none; }
 .hint, .http-note { display: block; margin-top: 12px; color: #62666d; font-size: 11px; line-height: 1.5; }

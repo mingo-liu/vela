@@ -1,6 +1,9 @@
 package desktop
 
-import "github.com/mingo-liu/vela/internal/mihomo"
+import (
+	"github.com/mingo-liu/vela/internal/mihomo"
+	"github.com/mingo-liu/vela/internal/profile"
+)
 
 // RuntimeService is the Wails boundary for the first local proxy slice.
 // It exposes no controller secret or raw controller URL.
@@ -22,8 +25,12 @@ func (s *RuntimeService) ImportSubscription(address string) (mihomo.State, error
 	return s.runner.ImportSubscription(address)
 }
 
-func (s *RuntimeService) UpdateSubscription() (mihomo.State, error) {
-	return s.runner.UpdateSubscription()
+func (s *RuntimeService) Subscriptions() ([]profile.Subscription, error) {
+	return s.runner.Subscriptions()
+}
+
+func (s *RuntimeService) UpdateSubscription(id string) (mihomo.State, error) {
+	return s.runner.UpdateSubscription(id)
 }
 
 func (s *RuntimeService) SetSystemProxy(enabled bool) (mihomo.State, error) {
