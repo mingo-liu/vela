@@ -13,7 +13,10 @@
 /bin/
 /dist/
 /.cache/
-/build/
+/build/resources/
+/build/darwin/Assets.car
+/build/darwin/icons.icns
+/build/windows/icon.ico
 /coverage.out
 /coverage.html
 *.test
