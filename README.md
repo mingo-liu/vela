@@ -14,7 +14,7 @@ wails3 package
 open bin/vela.app
 ```
 
-打包任务从 mihomo 官方发布页下载固定的 `v1.19.31` arm64 文件，校验 SHA-256，并将内核放入 `.app/Contents/Resources/`。下载缓存位于 `build/resources/`，不会提交。当前 `.app` 使用本机 ad-hoc 签名，仅用于本机验收。
+打包任务从 mihomo 官方发布页下载固定的 `v1.19.31` arm64 文件，并从 MetaCubeX 规则库的固定提交下载 GeoIP 数据库；两者均校验 SHA-256 后放入 `.app/Contents/Resources/`。下载缓存位于 `build/resources/`，不会提交。当前 `.app` 使用本机 ad-hoc 签名，仅用于本机验收。
 
 开发运行：
 
@@ -38,8 +38,8 @@ npm --prefix frontend run typecheck
 
 ## 导入范围与数据
 
-- 接受单文档、最多 2 MiB 的 mihomo YAML。当前支持内联节点、策略组、规则与基本 DNS 配置；额外监听、TUN、外部 provider、GEO 规则及其他未验证的顶层字段会明确拒绝。
-- 订阅下载使用直连，不继承系统代理；限制超时、响应大小和重定向。下载或校验失败时，旧配置保持不变。仅接受返回 mihomo YAML 的订阅地址，不转换 base64 节点列表。
+- 接受单文档、最多 2 MiB 的 mihomo YAML。当前支持内联节点、策略组、规则、GEOIP 规则与基本 DNS 配置；额外监听、TUN、外部 provider、GEOSITE 等其他 GEO 规则及未验证的顶层字段会明确拒绝。
+- 订阅下载使用直连，不继承系统代理；限制超时、响应大小和重定向。请求使用 Clash.Meta 客户端标识，以便支持按客户端类型返回 mihomo YAML 的订阅服务。下载或校验失败时，旧配置保持不变。仅接受返回 mihomo YAML 的订阅地址；如果服务端仍返回 Base64 节点列表，界面会提示切换订阅格式，当前版本不转换节点列表。
 - 订阅 URL 存在 macOS Keychain，配置正文保存在 `~/Library/Application Support/Vela/` 的私有文件中。URL 中的令牌不会写进仓库或应用日志。HTTP 订阅会在网络上传输明文令牌，优先使用服务商提供的 HTTPS 地址。
 - 运行时控制接口只监听回环地址，使用每次启动生成的随机密钥。界面不直接访问控制接口。
 

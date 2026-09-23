@@ -23,6 +23,7 @@ proxy-groups:
     type: select
     proxies: [node, DIRECT]
 rules:
+  - GEOIP,CN,DIRECT
   - MATCH,choose
 `
 	compiled, err := Compile([]byte(source), 7890, 19090, "secret")
@@ -39,7 +40,7 @@ rules:
 			t.Errorf("%s = %v, want %q", key, got, want)
 		}
 	}
-	if !strings.Contains(string(compiled), "example.com") || !strings.Contains(string(compiled), "MATCH,choose") {
+	if !strings.Contains(string(compiled), "example.com") || !strings.Contains(string(compiled), "GEOIP,CN,DIRECT") || !strings.Contains(string(compiled), "MATCH,choose") {
 		t.Fatal("compatible profile fields were lost")
 	}
 }
@@ -49,7 +50,7 @@ func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 		"tun:\n  enable: true\n",
 		"listeners:\n  - name: open\n    type: mixed\n    port: 9000\n",
 		"proxy-providers:\n  remote:\n    type: file\n    path: /tmp/private\n",
-		"rules:\n  - GEOIP,CN,DIRECT\n",
+		"rules:\n  - GEOSITE,CN,DIRECT\n",
 		"dns:\n  listen: 0.0.0.0:53\n",
 		"port: 1\nport: 2\n",
 		"proxies: &nodes [DIRECT]\nproxy-groups: *nodes\n",

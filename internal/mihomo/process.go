@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -122,6 +123,9 @@ func (r *Runner) Start() (State, error) {
 	if err := os.MkdirAll(r.dataDir, 0700); err != nil {
 		return r.fail(err)
 	}
+	if err := r.ensureGeoIPDatabase(raw); err != nil {
+		return r.fail(err)
+	}
 	r.state.Status, r.state.Error = "starting", ""
 	r.logs = &tailWriter{}
 	r.emit()
@@ -185,6 +189,27 @@ func (r *Runner) Start() (State, error) {
 		return r.state, nil
 	}
 	return r.fail(errors.New("控制端口无法分配"))
+}
+
+func (r *Runner) ensureGeoIPDatabase(profile []byte) error {
+	if !bytes.Contains(bytes.ToUpper(profile), []byte("GEOIP,")) {
+		return nil
+	}
+	for _, name := range []string{"Country.mmdb", "geoip.db", "geoip.metadb"} {
+		if _, err := os.Stat(filepath.Join(r.dataDir, name)); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(r.binary), "Country.mmdb"))
+	if errors.Is(err, os.ErrNotExist) {
+		return errors.New("缺少 GeoIP 数据库，请重新打包应用")
+	}
+	if err != nil {
+		return fmt.Errorf("读取 GeoIP 数据库失败: %w", err)
+	}
+	return writePrivate(filepath.Join(r.dataDir, "Country.mmdb"), data)
 }
 
 func (r *Runner) Stop() (State, error) {

@@ -29,6 +29,7 @@ tasks:
     deps:
       - task: common:go:mod:tidy
       - task: common:prepare:mihomo
+      - task: common:prepare:geodata
       - task: common:build:frontend
         vars:
           BUILD_FLAGS:
@@ -163,6 +164,7 @@ tasks:
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo"
+      - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Country.mmdb"
       - |
         if [ -f build/darwin/Assets.car ]; then
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
@@ -184,11 +186,15 @@ tasks:
       - 'echo "Skipping codesign (not available on {{OS}}). Sign the .app on macOS before distribution."'
 
   run:
+    deps:
+      - task: common:prepare:mihomo
+      - task: common:prepare:geodata
     cmds:
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/mihomo"
+      - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/Country.mmdb"
       - |
         if [ -f build/darwin/Assets.car ]; then
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"

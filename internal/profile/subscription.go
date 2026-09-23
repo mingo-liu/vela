@@ -2,12 +2,14 @@ package profile
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -45,7 +47,7 @@ func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := Compile(data, 7890, 9090, "validation-secret"); err != nil {
+	if err := validateSubscription(data); err != nil {
 		return err
 	}
 	previous, previousErr := s.urls.Get()
@@ -95,7 +97,47 @@ func (s *Subscriptions) Update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := validateSubscription(data); err != nil {
+		return err
+	}
 	return s.profiles.Import(string(data))
+}
+
+func validateSubscription(data []byte) error {
+	if _, err := Compile(data, 7890, 9090, "validation-secret"); err != nil {
+		if isBase64NodeList(data) {
+			return errors.New("订阅服务器返回了 Base64 节点列表，请使用 Clash/Mihomo 格式的订阅")
+		}
+		return err
+	}
+	return nil
+}
+
+func isBase64NodeList(data []byte) bool {
+	encoded := strings.Join(strings.Fields(string(data)), "")
+	if encoded == "" {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(encoded)
+	}
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(decoded), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		for _, scheme := range []string{"ss://", "ssr://", "vmess://", "vless://", "trojan://", "hysteria://", "hysteria2://", "tuic://"} {
+			if strings.HasPrefix(line, scheme) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 var ErrNoSubscription = errors.New("尚未保存订阅地址")
@@ -113,7 +155,8 @@ func (s *Subscriptions) fetch(ctx context.Context, address string) ([]byte, erro
 		return nil, errors.New("无法创建订阅请求")
 	}
 	request.Header.Set("Accept", "application/yaml, text/yaml, text/plain, */*")
-	request.Header.Set("User-Agent", "Vela/0.1")
+	// Many subscription servers select the response format from User-Agent.
+	request.Header.Set("User-Agent", "Clash.Meta")
 	response, err := s.client.Do(request)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {

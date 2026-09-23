@@ -129,7 +129,7 @@ func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte,
 		for _, rule := range rules.Content {
 			if rule.Kind == yaml.ScalarNode {
 				upper := strings.ToUpper(strings.TrimSpace(rule.Value))
-				for _, prefix := range []string{"GEOIP,", "GEOSITE,", "RULE-SET,", "IP-ASN,"} {
+				for _, prefix := range []string{"GEOSITE,", "RULE-SET,", "IP-ASN,"} {
 					if strings.HasPrefix(upper, prefix) {
 						return nil, fmt.Errorf("首版尚未打包规则资源: %s", prefix)
 					}

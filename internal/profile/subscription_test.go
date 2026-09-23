@@ -2,6 +2,7 @@ package profile
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,10 @@ func TestSubscriptionImportAndUpdateKeepLastGoodProfile(t *testing.T) {
 		if r.URL.Query().Get("token") != "private-token" {
 			t.Error("missing subscription token")
 		}
+		if r.UserAgent() != "Clash.Meta" {
+			_, _ = w.Write([]byte(base64.StdEncoding.EncodeToString([]byte("trojan://example"))))
+			return
+		}
 		_, _ = w.Write([]byte(body))
 	}))
 	defer server.Close()
@@ -46,6 +51,13 @@ func TestSubscriptionImportAndUpdateKeepLastGoodProfile(t *testing.T) {
 	got, err := store.Load()
 	if err != nil || string(got) != "proxies: []\nrules:\n  - MATCH,DIRECT\n" {
 		t.Fatalf("last good profile changed: %q, %v", got, err)
+	}
+}
+
+func TestSubscriptionReportsBase64NodeList(t *testing.T) {
+	data := []byte(base64.StdEncoding.EncodeToString([]byte("trojan://example\n")))
+	if err := validateSubscription(data); err == nil || !strings.Contains(err.Error(), "Base64 节点列表") {
+		t.Fatalf("unexpected format error: %v", err)
 	}
 }
 

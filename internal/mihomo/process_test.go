@@ -24,6 +24,7 @@ proxy-groups:
     type: select
     proxies: [DIRECT, REJECT]
 rules:
+  - GEOIP,CN,DIRECT
   - MATCH,Choose
 `); err != nil {
 		t.Fatal(err)

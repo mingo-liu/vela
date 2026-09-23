@@ -209,6 +209,12 @@ tasks:
     cmds:
       - sh scripts/prepare-mihomo.sh
 
+  prepare:geodata:
+    summary: Downloads and verifies the GeoIP database
+    platforms: [darwin]
+    cmds:
+      - sh scripts/prepare-geodata.sh
+
   dev:frontend:
     summary: Runs the frontend in development mode
     deps:
