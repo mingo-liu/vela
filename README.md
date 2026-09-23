@@ -4,6 +4,8 @@ Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当
 
 本地 mixed 端口固定为 `127.0.0.1:7890`。打开系统代理开关时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。如果接管失败，Vela 会停止刚启动的内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量；TUN、多配置和 provider 缓存仍在后续阶段。
 
+窗口左侧的 Home 显示连接状态和系统代理开关，Proxies 用于选择策略组节点，Profiles 用于导入 YAML 或管理订阅。
+
 ## 构建与运行
 
 需要 macOS Apple Silicon、Go 1.25+、Node.js 24、npm、Xcode Command Line Tools，以及 `wails3 v3.0.0-beta.24`。

@@ -47,8 +47,8 @@ func Run(assets fs.FS) error {
 		OnShutdown:  runner.Close,
 	})
 	window := wails.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "Vela", Width: 860, Height: 620, MinWidth: 640, MinHeight: 480,
-		URL: "/", BackgroundColour: application.NewRGB(13, 22, 34),
+		Title: "Vela", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 480,
+		URL: "/", BackgroundColour: application.NewRGB(255, 255, 255),
 	})
 	window.RegisterHook(events.Mac.WindowShouldClose, func(event *application.WindowEvent) {
 		window.Hide()

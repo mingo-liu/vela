@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@wailsio/runtime": "3.0.0-beta.24",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
