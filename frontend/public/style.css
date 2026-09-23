@@ -1,368 +1,84 @@
-:root {
-    /* Neon-night design tokens. */
-    --ink: #06070f;            /* darkest base behind the image */
-    --text: #f4f6fb;
-    --muted: #9aa6c0;
-    --accent: #ff4d4d;         /* Wails red */
-    --accent-2: #ff2d72;       /* pink, used in gradients */
-    --glass: rgba(255, 255, 255, 0.05);
-    --glass-strong: rgba(255, 255, 255, 0.08);
-    --glass-border: rgba(255, 255, 255, 0.12);
-    --radius: 11px;
-    --grad: linear-gradient(135deg, #ff5a4d 0%, #ff2d72 100%);
-
-    /* Golden-ratio spacing scale (φ ≈ 1.618), used for the vertical rhythm. */
-    --s-1: 0.618rem;   /* φ⁻¹ */
-    --s-2: 1rem;
-    --s-3: 1.618rem;   /* φ   */
-    --s-4: 2.618rem;   /* φ²  */
-    --s-5: 4.236rem;   /* φ³  */
-
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-        sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-    color-scheme: dark;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    -webkit-text-size-adjust: 100%;
+@font-face {
+  font-family: Inter;
+  src: url('/Inter-Medium.ttf');
 }
 
 * { box-sizing: border-box; }
 
-html {
-    background: var(--ink);
-}
-html, body {
-    margin: 0;
-    color: var(--text);
-}
 body {
-    overflow-x: hidden;
-    /* Nothing in the chrome is selectable (it's an app, not a document); the
-       text input opts back in below. */
-    -webkit-user-select: none;
-    user-select: none;
-    /* Drag the window by its background. Interactive controls opt out with
-       --wails-draggable: no-drag (the property inherits). */
-    --wails-draggable: drag;
+  margin: 0;
+  background: #0d1622;
+  color: #eaf1f7;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* Framework mount nodes (#app / #root) shouldn't affect layout, so the
-   body flex centering applies directly to .container. */
-#app, #root { display: contents; }
+.shell { max-width: 960px; margin: 0 auto; padding: 36px 40px 28px; }
+.header { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
+.mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: #54dcc9;
+  color: #0b2e35;
+  display: grid;
+  place-items: center;
+  font-size: 25px;
+  font-weight: 700;
+}
+.header h1 { font-size: 22px; margin: 0; }
+.header p { font-size: 12px; color: #88a0ae; margin: 3px 0 0; }
 
-/* Interactive elements: clickable (not draggable) and, for the input, selectable. */
-.brand-mark, .brand-badge, .input-box, .btn, .footer-docs, .toast {
-    --wails-draggable: no-drag;
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 28px;
+  padding: 30px;
+  border: 1px solid #2c4353;
+  border-radius: 18px;
+  background: linear-gradient(110deg, #183343, #172636);
 }
-.input, input[type="text"] {
-    -webkit-user-select: text;
-    user-select: text;
-}
+.hero h2 { font-size: 25px; margin: 15px 0 7px; }
+.hero p, .card p { color: #a8bac7; line-height: 1.6; margin: 0; font-size: 13px; }
+.status { display: inline-block; border-radius: 20px; padding: 6px 11px; background: #3a4850; color: #c7d2d8; font-size: 12px; }
+.status.running { background: #174d45; color: #73e5c6; }
+.status.failed { background: #60333d; color: #ffb7bd; }
+.status.starting, .status.stopping { background: #56502e; color: #eed988; }
 
-/* ----- Background layer ----------------------------------------------------
-   A fixed, full-viewport layer rather than `background-attachment: fixed`
-   (which iOS WKWebView ignores / renders janky). A dark gradient is layered
-   over the photo so foreground text stays legible. On desktop the gradient is
-   weighted to the left, where the content sits. */
-.bg {
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background:
-        linear-gradient(90deg, rgba(6, 7, 15, 0.94) 0%, rgba(6, 7, 15, 0.78) 32%,
-            rgba(6, 7, 15, 0.42) 64%, rgba(6, 7, 15, 0.30) 100%),
-        linear-gradient(0deg, rgba(6, 7, 15, 0.70) 0%, rgba(6, 7, 15, 0.10) 45%),
-        url("/bg-desktop.jpg") center / cover no-repeat;
-}
+button, .file-button, select { font: inherit; }
+.primary { border: 0; border-radius: 11px; padding: 14px 23px; background: #5ddcc7; color: #102f32; white-space: nowrap; cursor: pointer; font-weight: 700; }
+.primary:disabled, .subscription-actions button:disabled { cursor: not-allowed; opacity: .45; }
+.alert { margin-top: 18px; padding: 13px 16px; border: 1px solid #95515d; background: #4f2c37; border-radius: 10px; color: #ffced2; font-size: 13px; word-break: break-word; }
 
-body {
-    min-height: 100vh;
-    min-height: 100dvh;
-    display: flex;
-    flex-direction: column;             /* content area + footer pinned to the bottom */
-    /* Respect mobile safe areas (notch / home indicator). No bottom padding:
-       the footer sits flush at the bottom edge. */
-    /* Wider outer margins on the golden scale (φ² top/right, φ³ left). */
-    padding: max(var(--s-4), env(safe-area-inset-top)) max(var(--s-4), env(safe-area-inset-right))
-             0 max(var(--s-5), env(safe-area-inset-left));
-}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+.card { border: 1px solid #263c4c; border-radius: 15px; background: #142331; padding: 23px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 15px; }
+.card-head h3 { font-size: 15px; margin: 0; }
+.card-head span { font-size: 11px; color: #82a1ae; }
+.file-button { display: inline-block; margin-top: 21px; border: 1px solid #6fa3a3; border-radius: 9px; color: #9de7dd; padding: 10px 14px; cursor: pointer; font-size: 12px; }
+.file-button:has(input:disabled) { opacity: .4; cursor: not-allowed; }
+.file-button input { display: none; }
 
-.container {
-    flex: 1 0 auto;                     /* fill the space above the footer */
-    width: 100%;
-    max-width: 540px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;            /* vertically centre the content */
-    align-items: flex-start;
-    text-align: left;
-}
+.subscription { margin-top: 19px; border-top: 1px solid #2a4050; padding-top: 17px; }
+.subscription label { display: block; font-size: 12px; margin-bottom: 9px; }
+.subscription input { width: 100%; border: 1px solid #42606e; background: #0f1f2d; color: #eaf1f7; border-radius: 8px; padding: 10px; font: inherit; font-size: 11px; }
+.subscription-actions { display: flex; gap: 9px; margin: 11px 0; }
+.subscription-actions button { border: 1px solid #6fa3a3; background: transparent; color: #9de7dd; border-radius: 8px; padding: 8px 10px; cursor: pointer; font-size: 11px; }
+.subscription small { display: block; font-size: 10px; color: #85a0ae; }
+.subscription .http-note { margin-top: 8px; color: #e8b88e; }
+.endpoint { font-size: 24px; letter-spacing: .02em; margin: 14px 0 15px; color: #d5fcf5; }
 
-/* ----- Brand row ----------------------------------------------------------- */
-.brand {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    /* No top margin — the content block is vertically centred, so an extra top
-       margin would push everything (incl. the input) down. φ² gap below. */
-    margin-bottom: var(--s-4);
-}
-.brand-mark, .brand-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: transform 0.2s ease, filter 0.2s ease;
-}
-.brand-mark:hover, .brand-badge:hover {
-    transform: translateY(-2px);
-    filter: drop-shadow(0 0 1em rgba(255, 77, 77, 0.45));
-}
-/* Logo heights sit on the golden scale (φ³ = 4.236rem). The Wails mark carries
-   its wordmark, so the badge is one golden step smaller (φ³ ÷ √φ) to keep the
-   pair visually balanced. */
-.brand-logo { height: var(--s-5); width: auto; display: block; object-fit: contain; }
-.brand-badge img { height: calc(var(--s-5) / 1.272); width: auto; display: block; object-fit: contain; }
+.groups { margin-top: 18px; min-height: 130px; }
+.group { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 13px 0; border-top: 1px solid #2a4050; }
+.group strong { display: block; font-size: 13px; }
+.group small { display: block; color: #85a0ae; margin-top: 5px; font-size: 11px; }
+.group select { max-width: 48%; min-width: 160px; border: 1px solid #42606e; background: #0f1f2d; color: #eaf1f7; padding: 9px; border-radius: 8px; font-size: 12px; }
+footer { margin-top: 24px; color: #73909f; font-size: 11px; text-align: center; }
 
-/* ----- Version badge ------------------------------------------------------- */
-.badge {
-    display: inline-block;
-    padding: 4px 12px;
-    margin-bottom: 1.1rem;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: #ff7a8f;
-    background: rgba(255, 45, 114, 0.14);
-    border: 1px solid rgba(255, 45, 114, 0.32);
-    border-radius: 999px;
-}
-
-/* ----- Heading ------------------------------------------------------------- */
-.title {
-    margin: 0 0 var(--s-2);
-    max-width: 100%;
-    font-size: clamp(2.5rem, 7.5vw, 3.7rem);
-    line-height: 1.05;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    color: var(--text);
-    overflow-wrap: break-word;
-}
-.title-accent {
-    background: var(--grad);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-}
-
-/* The framework word ("JavaScript") crossfades to the entered name on Greet:
-   the outgoing word is taken out of flow and fades out while the incoming word
-   fades in over the same spot. */
-.title-name { position: relative; display: inline-block; }
-.title-name-text {
-    display: inline-block;
-    transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 0.68, 0.2, 1);
-}
-.title-name-text.is-outgoing { position: absolute; left: 0; top: 0; }
-.title-name-text.is-entering { opacity: 0; transform: translateY(0.3em); }   /* rises in from below */
-.title-name-text.is-leaving { opacity: 0; transform: translateY(-0.3em); }   /* lifts out upward */
-
-.subtitle {
-    margin: 0 0 var(--s-5);
-    max-width: 32rem;
-    color: var(--muted);
-    font-size: clamp(1.05rem, 2.9vw, 1.2rem);
-    line-height: 1.55;
-}
-
-/* ----- Greet input + button ------------------------------------------------ */
-/* Input row and the card below it are sized down so they sit more compact
-   under the heading. */
-.greet { width: 62%; }
-
-/* Input font is pinned at 16px: iOS Safari/WKWebView zooms the page when an
-   input under 16px gains focus, so the whole control is sized around that.
-   Tight vertical padding keeps it ~36px tall, icon : control ≈ 1 : φ. */
-.input-box {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    width: 100%;
-    padding: 4px 5px 4px 11px;
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    transition: border-color 0.2s ease;
-}
-.input-box:focus-within { border-color: rgba(255, 77, 77, 0.55); }
-
-.input-icon {
-    width: 23px;
-    height: 23px;
-    flex: 0 0 auto;
-    color: var(--muted);
-}
-
-.input,
-input[type="text"] {
-    flex: 1;
-    min-width: 0;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    font-size: 16px;
-    padding: 5px 2px;
-    outline: none;
-}
-.input::placeholder { color: rgba(154, 166, 192, 0.7); }
-
-.btn {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    border: none;
-    background: var(--grad);
-    color: #fff;
-    padding: 6px 15px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 6px 18px rgba(255, 45, 114, 0.35);
-    transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-}
-.btn svg { width: 17px; height: 17px; }
-.btn:hover { box-shadow: 0 8px 24px rgba(255, 45, 114, 0.5); }
-.btn:active { transform: scale(0.97); }
-
-/* ----- Toast (the reply from Go) ------------------------------------------- */
-/* Fixed overlay near the bottom, so showing the greeting never reflows the page.
-   The Go-blue badge makes it obvious the string was produced by the Go backend. */
-.toast {
-    position: fixed;
-    /* Top-right with an equal golden-ratio inset (φ = 1.618rem) on both edges,
-       clear of the macOS traffic lights (which are on the left). Falls back to
-       the notch / safe area when larger. Drops in from just above. */
-    top: max(var(--s-3), env(safe-area-inset-top));
-    right: max(var(--s-3), env(safe-area-inset-right));
-    z-index: 20;
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    max-width: min(86vw, 420px);
-    padding: 11px 16px;
-    background: rgba(13, 17, 28, 0.72);
-    border: 1px solid var(--glass-border);
-    border-radius: 14px;
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.45);
-    color: var(--text);
-    font-size: 15px;
-    line-height: 1.45;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-16px);
-    transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.toast.is-visible {
-    opacity: 1;
-    transform: translateY(0);
-}
-/* Muted, on-palette label so it's clear the string came from the Go backend. */
-.toast-label {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--muted);
-}
-.toast-msg { min-width: 0; }
-
-/* ----- Footer -------------------------------------------------------------- */
-/* Thin bar pinned to the bottom: version far-left, live clock centered. */
-.footer-divider {
-    width: 100%;
-    height: 0;
-    border: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    margin: 0;
-}
-.footer {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;   /* version | clock | spacer */
-    align-items: center;
-    width: 100%;
-    /* keep the bar off the very edge and clear of the home indicator */
-    padding: 11px max(0.5rem, env(safe-area-inset-right))
-             max(11px, env(safe-area-inset-bottom)) 0;
-    color: var(--muted);
-    font-size: 12.5px;
-}
-.footer-version {
-    justify-self: start;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    white-space: nowrap;
-}
-.footer-time {
-    justify-self: center;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-}
-.footer-time svg { width: 19px; height: 19px; opacity: 0.85; }
-.footer-docs {
-    justify-self: end;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--muted);
-    text-decoration: none;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: color 0.2s ease;
-}
-.footer-docs:hover { color: var(--text); }
-.footer-docs svg { width: 17px; height: 17px; }
-.dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent);
-}
-
-/* ----- Mobile -------------------------------------------------------------- */
-@media (max-width: 640px) {
-    .bg {
-        background:
-            linear-gradient(0deg, rgba(6, 7, 15, 0.92) 0%, rgba(6, 7, 15, 0.55) 40%,
-                rgba(6, 7, 15, 0.45) 100%),
-            url("/bg-mobile.jpg") center / cover no-repeat;
-    }
-    .container { align-items: center; text-align: center; margin: 0 auto; }
-    /* Stack the title onto two lines ("Wails +" / "Javascript") like the target. */
-    .title-accent { display: block; }
-    .subtitle { margin-left: auto; margin-right: auto; }
-    /* A touch more width back on small screens so the input stays usable. */
-    .greet { width: 86%; }
-    /* Trim the surround on a phone, but keep the input at 16px (iOS focus-zoom
-       guard) — only the padding/button/icon shrink, not the field's text. */
-    .input-box { padding: 3px 4px 3px 10px; gap: 6px; }
-    .input-icon { width: 21px; height: 21px; }
-    .input { font-size: 16px; padding: 4px 2px; }
-    .btn { padding: 5px 13px; font-size: 14px; gap: 5px; }
-    .btn svg { width: 16px; height: 16px; }
-    /* Three items (version / clock / docs) share a narrow row — shrink to fit. */
-    .footer { font-size: 11px; gap: 4px; }
-    .footer-time { gap: 5px; }
-    .footer-time svg { width: 13px; height: 13px; }
+@media (max-width: 670px) {
+  .shell { padding: 23px 18px; }
+  .hero { align-items: flex-start; flex-direction: column; }
+  .grid { grid-template-columns: 1fr; }
+  .group { align-items: flex-start; flex-direction: column; }
+  .group select { max-width: 100%; width: 100%; }
 }

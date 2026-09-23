@@ -203,6 +203,12 @@ tasks:
     cmds:
       - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
 
+  prepare:mihomo:
+    summary: Downloads and verifies the pinned Apple Silicon mihomo binary
+    platforms: [darwin]
+    cmds:
+      - sh scripts/prepare-mihomo.sh
+
   dev:frontend:
     summary: Runs the frontend in development mode
     deps:

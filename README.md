@@ -1,44 +1,46 @@
 # Vela
 
-基于 Wails v3、React 和 mihomo 的 macOS 代理客户端。当前已初始化官方 React + TypeScript 示例，包含前端调用 Go 的问候按钮及 Go 推送的时钟事件；代理业务、托盘和辅助服务尚未实现。
+Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当前 MVP 支持导入单份 mihomo YAML 或 HTTP/HTTPS 订阅地址、手动更新订阅、启动与停止本地代理，以及选择手动策略组中的节点。关闭窗口后应用留在菜单栏，明确退出时停止内核。
 
-## 环境
+**当前版本不修改 macOS 系统代理设置。** 本地 mixed 端口固定为 `127.0.0.1:7890`，需要在使用代理的应用中手动填入该地址。系统代理辅助服务、自动恢复、多配置、TUN 和 provider 缓存仍在后续阶段。
 
-- Go 1.25 或更新版本（本机验证使用 Go 1.26.5）。
-- Node.js 24 与 npm（本机验证使用 Node.js 24.14.0）。
-- macOS Command Line Tools：`xcode-select --install`。
-- Wails CLI 和前端 runtime 均锁定为 `v3.0.0-beta.24`。
+## 构建与运行
+
+需要 macOS Apple Silicon、Go 1.25+、Node.js 24、npm、Xcode Command Line Tools，以及 `wails3 v3.0.0-beta.24`。
 
 ```sh
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
-export PATH="$(go env GOPATH)/bin:$PATH"
+wails3 package
+open bin/vela.app
 ```
 
-## 开发运行
+打包任务从 mihomo 官方发布页下载固定的 `v1.19.31` arm64 文件，校验 SHA-256，并将内核放入 `.app/Contents/Resources/`。下载缓存位于 `build/resources/`，不会提交。当前 `.app` 使用本机 ad-hoc 签名，仅用于本机验收。
 
-在项目根目录运行：
+开发运行：
 
 ```sh
 wails3 dev
 ```
 
-官方任务会安装前端依赖、生成绑定、启动 Vite 和桌面窗口。Vite 使用 `127.0.0.1:9245`。在桌面窗口中输入名字并点击 Greet，可调用 Go 的 `GreetService.Greet`；底部时钟验证 Go 到前端的事件推送。
-
-## 构建与检查
+如果只运行 Go 侧的真实内核集成测试：
 
 ```sh
-wails3 package
+VELA_TEST_MIHOMO="$PWD/build/resources/mihomo" go test ./internal/mihomo -run TestRunnerWithRealCore -v
+```
+
+常规检查：
+
+```sh
 go test ./...
 go vet ./...
 npm --prefix frontend run typecheck
-open bin/vela.app
 ```
 
-打包产物为 `bin/vela.app`，使用本机 ad-hoc 签名，不是公开分发用的公证版本。前端生成绑定与构建产物不提交；提交 `go.sum` 和 `frontend/package-lock.json`。需要严格复现前端安装时在 `frontend` 目录运行 `npm ci`。
+## 导入范围与数据
 
-## 目录与设计
+- 接受单文档、最多 2 MiB 的 mihomo YAML。当前支持内联节点、策略组、规则与基本 DNS 配置；额外监听、TUN、外部 provider、GEO 规则及其他未验证的顶层字段会明确拒绝。
+- 订阅下载使用直连，不继承系统代理；限制超时、响应大小和重定向。下载或校验失败时，旧配置保持不变。仅接受返回 mihomo YAML 的订阅地址，不转换 base64 节点列表。
+- 订阅 URL 存在 macOS Keychain，配置正文保存在 `~/Library/Application Support/Vela/` 的私有文件中。URL 中的令牌不会写进仓库或应用日志。HTTP 订阅会在网络上传输明文令牌，优先使用服务商提供的 HTTPS 地址。
+- 运行时控制接口只监听回环地址，使用每次启动生成的随机密钥。界面不直接访问控制接口。
 
-根目录 `main.go`、`greetservice.go` 暂时保留官方演示结构；业务实现时按设计逐步迁入 `internal/app` 与 `internal/desktop`。官方模板附带的其他平台构建文件保留，首版只验证 macOS。
-
-- [首版功能与技术设计](docs/design/macos-proxy-client-design.md)
-- [项目架构、目录与依赖约定](docs/design/project-structure.md)
+完整设计和后续实施顺序见本地的 `docs/design/`。该目录目前按项目规则不纳入 Git。

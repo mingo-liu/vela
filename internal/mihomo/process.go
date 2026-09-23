@@ -1,0 +1,404 @@
+package mihomo
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/mingo-liu/vela/internal/profile"
+)
+
+type State struct {
+	Status     string `json:"status"`
+	Port       int    `json:"port"`
+	HasProfile bool   `json:"hasProfile"`
+	Error      string `json:"error"`
+}
+
+type Group struct {
+	Name    string   `json:"name"`
+	Current string   `json:"current"`
+	Options []string `json:"options"`
+}
+
+type Runner struct {
+	mu       sync.Mutex
+	store    *profile.Store
+	subs     *profile.Subscriptions
+	dataDir  string
+	binary   string
+	state    State
+	cmd      *exec.Cmd
+	done     chan struct{}
+	apiPort  int
+	secret   string
+	client   *http.Client
+	logs     *tailWriter
+	onChange func(State)
+}
+
+func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binary string, port int, onChange func(State)) *Runner {
+	transport := &http.Transport{Proxy: nil}
+	return &Runner{store: store, subs: subs, dataDir: dataDir, binary: binary, state: State{Status: "stopped", Port: port, HasProfile: store.Exists()}, client: &http.Client{Timeout: 2 * time.Second, Transport: transport}, logs: &tailWriter{}, onChange: onChange}
+}
+
+func (r *Runner) Snapshot() State {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := r.state
+	s.HasProfile = r.store.Exists()
+	return s
+}
+
+func (r *Runner) Import(data string) (State, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil {
+		return r.state, errors.New("请先停止内核再导入新配置")
+	}
+	if err := r.subs.ImportLocal(data); err != nil {
+		return r.state, err
+	}
+	r.state.HasProfile = true
+	r.state.Error = ""
+	r.emit()
+	return r.state, nil
+}
+
+func (r *Runner) ImportSubscription(address string) (State, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil {
+		return r.state, errors.New("请先停止内核再导入订阅")
+	}
+	if err := r.subs.Import(context.Background(), address); err != nil {
+		return r.state, err
+	}
+	r.state.HasProfile, r.state.Error = true, ""
+	r.emit()
+	return r.state, nil
+}
+
+func (r *Runner) UpdateSubscription() (State, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil {
+		return r.state, errors.New("请先停止内核再更新订阅")
+	}
+	if err := r.subs.Update(context.Background()); err != nil {
+		return r.state, err
+	}
+	r.state.HasProfile, r.state.Error = true, ""
+	r.emit()
+	return r.state, nil
+}
+
+func (r *Runner) Start() (State, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil {
+		return r.state, nil
+	}
+	if r.binary == "" {
+		return r.fail(errors.New("未找到 mihomo 内核；请先运行资源准备任务"))
+	}
+	raw, err := r.store.Load()
+	if err != nil {
+		return r.fail(err)
+	}
+	if err := os.MkdirAll(r.dataDir, 0700); err != nil {
+		return r.fail(err)
+	}
+	r.state.Status, r.state.Error = "starting", ""
+	r.logs = &tailWriter{}
+	r.emit()
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return r.fail(err)
+	}
+	r.secret = hex.EncodeToString(secret)
+	for attempt := 0; attempt < 3; attempt++ {
+		port, err := freePort()
+		if err != nil {
+			return r.fail(err)
+		}
+		r.apiPort = port
+		compiled, err := profile.Compile(raw, r.state.Port, port, r.secret)
+		if err != nil {
+			return r.fail(err)
+		}
+		configPath := filepath.Join(r.dataDir, "runtime.yaml")
+		if err := writePrivate(configPath, compiled); err != nil {
+			return r.fail(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		check := exec.CommandContext(ctx, r.binary, "-t", "-d", r.dataDir, "-f", configPath)
+		check.Env = cleanEnv()
+		_, err = check.CombinedOutput()
+		cancel()
+		if err != nil {
+			return r.fail(fmt.Errorf("内核配置校验失败（%v）；请检查节点与规则内容", err))
+		}
+		cmd := exec.Command(r.binary, "-d", r.dataDir, "-f", configPath)
+		cmd.Env = cleanEnv()
+		cmd.Stdout, cmd.Stderr = r.logs, r.logs
+		if err := cmd.Start(); err != nil {
+			return r.fail(err)
+		}
+		done := make(chan struct{})
+		go func() {
+			err := cmd.Wait()
+			close(done)
+			r.mu.Lock()
+			if r.cmd == cmd {
+				r.cmd = nil
+				if r.state.Status != "stopping" {
+					r.state.Status = "failed"
+					r.state.Error = fmt.Sprintf("内核退出: %v", err)
+					r.emit()
+				}
+			}
+			r.mu.Unlock()
+		}()
+		r.cmd, r.done = cmd, done
+		if err := r.waitReady(done); err != nil {
+			_ = cmd.Process.Kill()
+			<-done
+			r.cmd = nil
+			return r.fail(fmt.Errorf("内核未就绪: %w", err))
+		}
+		r.state.Status = "running"
+		r.emit()
+		return r.state, nil
+	}
+	return r.fail(errors.New("控制端口无法分配"))
+}
+
+func (r *Runner) Stop() (State, error) {
+	r.mu.Lock()
+	if r.cmd == nil {
+		r.state.Status, r.state.Error = "stopped", ""
+		r.emit()
+		s := r.state
+		r.mu.Unlock()
+		return s, nil
+	}
+	cmd, done := r.cmd, r.done
+	r.state.Status = "stopping"
+	r.emit()
+	r.mu.Unlock()
+	_ = cmd.Process.Signal(os.Interrupt)
+	select {
+	case <-done:
+	case <-time.After(4 * time.Second):
+		_ = cmd.Process.Kill()
+		<-done
+	}
+	r.mu.Lock()
+	if r.cmd == cmd {
+		r.cmd = nil
+	}
+	r.state.Status, r.state.Error = "stopped", ""
+	r.emit()
+	s := r.state
+	r.mu.Unlock()
+	return s, nil
+}
+
+func (r *Runner) Groups() ([]Group, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.Status != "running" {
+		return nil, errors.New("内核尚未运行")
+	}
+	var response struct {
+		Proxies map[string]struct {
+			Type string   `json:"type"`
+			Now  string   `json:"now"`
+			All  []string `json:"all"`
+		} `json:"proxies"`
+	}
+	if err := r.request(http.MethodGet, "/proxies", nil, &response); err != nil {
+		return nil, err
+	}
+	groups := make([]Group, 0)
+	for name, proxy := range response.Proxies {
+		if proxy.Type == "Selector" {
+			groups = append(groups, Group{Name: name, Current: proxy.Now, Options: proxy.All})
+		}
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+	return groups, nil
+}
+
+func (r *Runner) Select(group, option string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.Status != "running" {
+		return errors.New("内核尚未运行")
+	}
+	var response struct {
+		Proxies map[string]struct {
+			Type string   `json:"type"`
+			All  []string `json:"all"`
+		} `json:"proxies"`
+	}
+	if err := r.request(http.MethodGet, "/proxies", nil, &response); err != nil {
+		return err
+	}
+	p, ok := response.Proxies[group]
+	if !ok || p.Type != "Selector" {
+		return errors.New("策略组不可手动选择")
+	}
+	valid := false
+	for _, candidate := range p.All {
+		valid = valid || candidate == option
+	}
+	if !valid {
+		return errors.New("节点不在策略组中")
+	}
+	body, err := json.Marshal(map[string]string{"name": option})
+	if err != nil {
+		return err
+	}
+	return r.request(http.MethodPut, "/proxies/"+url.PathEscape(group), strings.NewReader(string(body)), nil)
+}
+
+func (r *Runner) Close() { _, _ = r.Stop() }
+
+func (r *Runner) fail(err error) (State, error) {
+	r.state.Status, r.state.Error = "failed", err.Error()
+	r.emit()
+	return r.state, err
+}
+
+// emit is called with mu held. The callback must return without calling Runner.
+func (r *Runner) emit() {
+	if r.onChange != nil {
+		r.onChange(r.state)
+	}
+}
+
+func (r *Runner) waitReady(done <-chan struct{}) error {
+	deadline := time.NewTimer(12 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(150 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if r.request(http.MethodGet, "/version", nil, nil) == nil {
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", r.state.Port), time.Second)
+			if err == nil {
+				conn.Close()
+				return nil
+			}
+		}
+		select {
+		case <-done:
+			return errors.New("进程提前退出")
+		case <-deadline.C:
+			return errors.New("等待控制接口与代理端口超时")
+		case <-tick.C:
+		}
+	}
+}
+
+func (r *Runner) request(method, path string, body *strings.Reader, out any) error {
+	var reader *strings.Reader
+	if body != nil {
+		reader = body
+	} else {
+		reader = strings.NewReader("")
+	}
+	req, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", r.apiPort, path), reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+r.secret)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("内核 API 返回 HTTP %d", resp.StatusCode)
+	}
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
+}
+
+func freePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+func cleanEnv() []string {
+	result := make([]string, 0)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !strings.HasPrefix(key, "CLASH_") && key != "SAFE_PATHS" {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+func writePrivate(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".runtime-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+}
+
+type tailWriter struct {
+	mu   sync.Mutex
+	data []byte
+}
+
+func (w *tailWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.data = append(w.data, p...)
+	if len(w.data) > 16<<10 {
+		w.data = append([]byte(nil), w.data[len(w.data)-(16<<10):]...)
+	}
+	return len(p), nil
+}
