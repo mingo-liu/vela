@@ -45,6 +45,10 @@ func (s *RuntimeService) Groups() ([]mihomo.Group, error) { return s.runner.Grou
 
 func (s *RuntimeService) NodeNames() ([]string, error) { return s.runner.NodeNames() }
 
+func (s *RuntimeService) TestGroupDelay(group string) (map[string]int, error) {
+	return s.runner.TestGroupDelay(group)
+}
+
 func (s *RuntimeService) Select(group, option string) error {
 	return s.runner.Select(group, option)
 }

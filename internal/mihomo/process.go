@@ -43,6 +43,8 @@ type Group struct {
 	Options []string `json:"options"`
 }
 
+const delayTestURL = "https://www.gstatic.com/generate_204"
+
 type Runner struct {
 	operationMu     sync.Mutex
 	mu              sync.Mutex
@@ -428,6 +430,94 @@ func (r *Runner) NodeNames() ([]string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.store.NodeNames()
+}
+
+func (r *Runner) TestGroupDelay(group string) (delays map[string]int, err error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	running := r.state.Status == "running"
+	r.mu.Unlock()
+	if !running {
+		state, err := r.Start()
+		if err != nil {
+			return nil, err
+		}
+		if state.Status != "running" {
+			return nil, errors.New("内核尚未就绪，无法测延迟")
+		}
+		defer func() {
+			_, stopErr := r.Stop()
+			err = errors.Join(err, stopErr)
+		}()
+	}
+	r.mu.Lock()
+	apiPort, secret, transport := r.apiPort, r.secret, r.client.Transport
+	r.mu.Unlock()
+
+	groups, err := r.Groups()
+	if err != nil {
+		return nil, err
+	}
+	var options []string
+	found := false
+	for _, candidate := range groups {
+		if candidate.Name == group {
+			options = candidate.Options
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, errors.New("策略组不存在")
+	}
+
+	client := &http.Client{Timeout: 6 * time.Second, Transport: transport}
+	delays = make(map[string]int)
+	var mu sync.Mutex
+	var workers sync.WaitGroup
+	limit := make(chan struct{}, 8)
+	for _, option := range options {
+		workers.Add(1)
+		limit <- struct{}{}
+		go func() {
+			defer workers.Done()
+			defer func() { <-limit }()
+			delay, err := testProxyDelay(client, apiPort, secret, option)
+			if err == nil && delay > 0 {
+				mu.Lock()
+				delays[option] = delay
+				mu.Unlock()
+			}
+		}()
+	}
+	workers.Wait()
+	return delays, nil
+}
+
+func testProxyDelay(client *http.Client, apiPort int, secret, option string) (int, error) {
+	query := url.Values{"url": {delayTestURL}, "timeout": {"5000"}}
+	address := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?%s", apiPort, url.PathEscape(option), query.Encode())
+	request, err := http.NewRequest(http.MethodGet, address, nil)
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Authorization", "Bearer "+secret)
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("内核 API 返回 HTTP %d", response.StatusCode)
+	}
+	var result struct {
+		Delay int `json:"delay"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+	return result.Delay, nil
 }
 
 func (r *Runner) Select(group, option string) error {

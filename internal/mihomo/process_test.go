@@ -1,8 +1,14 @@
 package mihomo
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/mingo-liu/vela/internal/profile"
@@ -62,6 +68,12 @@ rules:
 	if systemProxy.enabled {
 		t.Fatal("system proxy was not restored")
 	}
+	if _, err := runner.TestGroupDelay("Choose"); err != nil {
+		t.Fatalf("offline delay test: %v", err)
+	}
+	if state := runner.Snapshot(); state.Status != "stopped" || state.SystemProxyEnabled || systemProxy.enabled {
+		t.Fatalf("offline delay test changed connection state: %+v", state)
+	}
 	if err := runner.Select("Choose", "DIRECT"); err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +129,50 @@ func TestGroupsAvailableBeforeCoreStarts(t *testing.T) {
 	groups, err = runner.Groups()
 	if err != nil || len(groups) != 2 || groups[0].Current != "DIRECT" {
 		t.Fatalf("offline selection: %+v, %v", groups, err)
+	}
+}
+
+func TestGroupDelayTestsEachOption(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-secret" {
+			t.Error("missing controller authorization")
+		}
+		if r.URL.Path == "/proxies" {
+			_, _ = w.Write([]byte(`{"proxies":{"Choose":{"type":"Selector","all":["Node/A","Unavailable"]}}}`))
+			return
+		}
+		if r.URL.Query().Get("url") != delayTestURL || r.URL.Query().Get("timeout") != "5000" {
+			t.Errorf("incorrect delay test query: %s", r.URL.RawQuery)
+		}
+		if r.URL.Path == "/proxies/Node/A/delay" {
+			_ = json.NewEncoder(w).Encode(map[string]int{"delay": 123})
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(strings.TrimPrefix(parsed.Host, "127.0.0.1:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(profile.NewStore(t.TempDir()), nil, "", "", 7890, nil, nil)
+	runner.state.Status = "running"
+	runner.apiPort = port
+	runner.secret = "test-secret"
+	delays, err := runner.TestGroupDelay("Choose")
+	if err != nil || len(delays) != 1 || delays["Node/A"] != 123 {
+		t.Fatalf("group delays: %+v, %v", delays, err)
+	}
+	if _, err := runner.TestGroupDelay("Missing"); err == nil {
+		t.Fatal("unknown group accepted")
+	}
+	runner.state.Status = "stopped"
+	if _, err := runner.TestGroupDelay("Choose"); err == nil {
+		t.Fatal("delay test accepted with stopped core")
 	}
 }
 

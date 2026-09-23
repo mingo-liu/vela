@@ -5,6 +5,7 @@ import type { Group, State } from '../bindings/github.com/mingo-liu/vela/interna
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 
 type Page = 'home' | 'proxies' | 'profiles'
+type SortMode = 'name' | 'delay'
 
 const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false }
 const navigation = [
@@ -31,11 +32,36 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? '未提供' : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function SortModeIcon({ mode }: { mode: SortMode }) {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {mode === 'name' ? <>
+      <path d="M2.5 11 7 3l4.5 8M4.2 8h5.6" />
+      <path d="M2.5 14h9l-9 7h9" />
+    </> : <>
+      <path d="M5.5 3h4M7.5 3v2.5" />
+      <circle cx="7.5" cy="12" r="6.5" />
+      <path d="M7.5 8.5V12l2.4-2.4" />
+    </>}
+    <path d="M19 5v14m-3-3 3 3 3-3" />
+  </svg>
+}
+
+function RoundTripIcon({ testing }: { testing: boolean }) {
+  return <svg className={`roundtrip-icon${testing ? ' testing' : ''}`} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path className="trip-out" d="M3 7.5h16m-3-3 3 3-3 3" />
+    <path className="trip-back" d="M21 16.5H5m3-3-3 3 3 3" />
+  </svg>
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>('home')
   const [state, setState] = useState<State>(empty)
   const [groups, setGroups] = useState<Group[]>([])
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const [groupDelays, setGroupDelays] = useState<Record<string, Record<string, number | undefined>>>({})
+  const [measuredGroups, setMeasuredGroups] = useState<Record<string, boolean>>({})
+  const [testingGroup, setTestingGroup] = useState<string | null>(null)
+  const [sortModes, setSortModes] = useState<Record<string, SortMode>>({})
   const [nodeNames, setNodeNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -74,6 +100,11 @@ export default function App() {
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
   }, [state.hasProfile, profileRevision])
+
+  useEffect(() => {
+    setGroupDelays({})
+    setMeasuredGroups({})
+  }, [profileRevision])
 
   useEffect(() => {
     let active = true
@@ -120,6 +151,27 @@ export default function App() {
 
   const toggleGroup = (name: string, initiallyOpen: boolean) => {
     setExpandedGroups(current => ({ ...current, [name]: !(current[name] ?? initiallyOpen) }))
+  }
+
+  const testGroupDelay = async (group: string) => {
+    if (testingGroup) return
+    setTestingGroup(group)
+    setNotice('')
+    try {
+      const delays = await Runtime.TestGroupDelay(group)
+      setGroupDelays(current => ({ ...current, [group]: delays ?? {} }))
+      setMeasuredGroups(current => ({ ...current, [group]: true }))
+    } catch (error) {
+      setNotice(message(error))
+    } finally {
+      setTestingGroup(null)
+    }
+  }
+
+  const toggleGroupSort = (group: string) => {
+    const next = (sortModes[group] ?? 'name') === 'name' ? 'delay' : 'name'
+    setSortModes(current => ({ ...current, [group]: next }))
+    if (next === 'delay' && !measuredGroups[group] && state.hasProfile) void testGroupDelay(group)
   }
 
   const importFile = async (file?: File) => {
@@ -190,12 +242,23 @@ export default function App() {
           {state.hasProfile && groups.length === 0 && nodeNames.length > 0 && <p className="no-groups">当前配置没有手动策略组，下方列出订阅节点。</p>}
           <div className="proxy-group-stack">{groups.map((group, index) => {
             const expanded = expandedGroups[group.name] ?? index === 0
+            const sortMode = sortModes[group.name] ?? 'name'
+            const delays = groupDelays[group.name] ?? {}
+            const options = [...(group.options ?? [])]
+            if (sortMode === 'name') options.sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }))
+            if (sortMode === 'delay') options.sort((a, b) => (delays[a] ?? Infinity) - (delays[b] ?? Infinity) || a.localeCompare(b, 'zh-CN', { numeric: true }))
             return <section className="proxy-group" key={group.name} aria-label={`${group.name} 策略组`}>
-              <button className="proxy-group-toggle" type="button" aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}>
-                <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">Selector</span><span>{running ? '当前节点' : '预选节点'}：{group.current || '未选择'}</span></small></span>
-                <span className="proxy-group-end"><span>{group.options?.length ?? 0} 个节点</span><CaretDown size={20} className={expanded ? 'expanded' : ''} /></span>
-              </button>
-              {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{(group.options ?? []).map(option => <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={busy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span>{groups.some(candidate => candidate.name === option) ? '策略组' : nodeNames.includes(option) ? '代理节点' : '内置节点'}</span></button>)}</div>}
+              <div className="proxy-group-header">
+                <button className="proxy-group-toggle" type="button" aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}>
+                  <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">Selector</span><span>{running ? '当前节点' : '预选节点'}：{group.current || '未选择'}</span></small></span>
+                </button>
+                <div className="proxy-group-actions">
+                  <button className={`proxy-group-action${testingGroup === group.name ? ' testing' : ''}`} type="button" aria-label={`测试 ${group.name} 的节点延迟`} title="测延迟" disabled={busy || testingGroup !== null} onClick={() => void testGroupDelay(group.name)}><RoundTripIcon testing={testingGroup === group.name} /></button>
+                  <button className="proxy-group-action sort" type="button" aria-label={`${group.name}：当前按${sortMode === 'name' ? '名称' : '延迟'}排序，点击切换为按${sortMode === 'name' ? '延迟' : '名称'}排序`} title={sortMode === 'name' ? '当前按名称排序，点击按延迟排序' : '当前按延迟排序，点击按名称排序'} onClick={() => toggleGroupSort(group.name)}><SortModeIcon mode={sortMode} /></button>
+                </div>
+                <button className="proxy-group-expand" type="button" aria-label={`${expanded ? '收起' : '展开'} ${group.name}`} aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}><span>{group.options?.length ?? 0} 个节点</span><CaretDown size={20} className={expanded ? 'expanded' : ''} /></button>
+              </div>
+              {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{options.map(option => <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={busy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span className="proxy-node-meta"><span className="proxy-node-kind">{groups.some(candidate => candidate.name === option) ? '策略组' : nodeNames.includes(option) ? '代理节点' : '内置节点'}</span><span className={`proxy-node-delay${testingGroup === group.name ? ' testing' : delays[option] ? ' measured' : ''}`}>{testingGroup === group.name ? <>测速中<span className="delay-dots" aria-hidden="true"><i /><i /><i /></span></> : delays[option] ? `${delays[option]} ms` : measuredGroups[group.name] ? '失败' : '未测速'}</span></span></button>)}</div>}
             </section>
           })}</div>
           {groups.length === 0 && nodeNames.length > 0 && <div className="profile-nodes"><h3>当前配置节点 <small>{nodeNames.length} 个</small></h3><div className="proxy-options" aria-label="当前配置节点">{nodeNames.map(name => <span key={name}>{name}</span>)}</div></div>}
