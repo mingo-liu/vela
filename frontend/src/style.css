@@ -73,18 +73,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .proxy-group-title small { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; color: #62666d; font-size: 12px; overflow-wrap: anywhere; }
 .proxy-kind { padding: 3px 7px; border: 1px solid #ccd9ff; border-radius: 6px; color: #3769c5; font-size: 11px; }
 .proxy-group-actions { display: flex; align-items: center; gap: 4px; flex: none; }
-.proxy-group-action { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 34px; height: 34px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: #44474d; }
+.proxy-group-action { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #44474d; }
 .proxy-group-action:hover:not(:disabled) { background: #edf0f4; }
-.proxy-group-action.sort { width: 34px; padding: 0; }
+.proxy-group-action svg { flex: none; }
+.proxy-group-action.signal svg { transform: translateY(-4px); }
 .proxy-group-action.testing:disabled { opacity: 1; }
-.roundtrip-icon.testing .trip-out { animation: trip-out 1s ease-in-out infinite; }
-.roundtrip-icon.testing .trip-back { animation: trip-back 1s ease-in-out infinite; }
 .proxy-group-expand { display: inline-flex; flex: none; align-items: center; gap: 14px; align-self: stretch; padding: 0 22px 0 12px; border: 0; background: transparent; color: #7a7d84; font-size: 12px; white-space: nowrap; }
 .proxy-group-expand svg { transition: transform .18s ease; }
 .proxy-group-expand svg.expanded { transform: rotate(180deg); }
-@keyframes trip-out { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(2px); } }
-@keyframes trip-back { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-2px); } }
-@media (prefers-reduced-motion: reduce) { .roundtrip-icon.testing path { animation: none; } }
 .proxy-node-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; border-top: 1px solid #e7e8eb; }
 .proxy-node { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 16px; min-width: 0; min-height: 94px; padding: 15px 16px; border: 1px solid transparent; border-radius: 11px; background: #fff; color: #24272d; text-align: left; }
 .proxy-node:hover:not(:disabled) { border-color: #c8d8fa; background: #f9fbff; }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, PlugsConnected, Stack } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, PlugsConnected, Stack, WifiMedium } from '@phosphor-icons/react'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
@@ -33,7 +33,7 @@ function formatDate(value: string | null): string {
 }
 
 function SortModeIcon({ mode }: { mode: SortMode }) {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {mode === 'name' ? <>
       <path d="M2.5 11 7 3l4.5 8M4.2 8h5.6" />
       <path d="M2.5 14h9l-9 7h9" />
@@ -43,13 +43,6 @@ function SortModeIcon({ mode }: { mode: SortMode }) {
       <path d="M7.5 8.5V12l2.4-2.4" />
     </>}
     <path d="M19 5v14m-3-3 3 3 3-3" />
-  </svg>
-}
-
-function RoundTripIcon({ testing }: { testing: boolean }) {
-  return <svg className={`roundtrip-icon${testing ? ' testing' : ''}`} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path className="trip-out" d="M3 7.5h16m-3-3 3 3-3 3" />
-    <path className="trip-back" d="M21 16.5H5m3-3-3 3 3 3" />
   </svg>
 }
 
@@ -253,7 +246,7 @@ export default function App() {
                   <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">Selector</span><span>{running ? '当前节点' : '预选节点'}：{group.current || '未选择'}</span></small></span>
                 </button>
                 <div className="proxy-group-actions">
-                  <button className={`proxy-group-action${testingGroup === group.name ? ' testing' : ''}`} type="button" aria-label={`测试 ${group.name} 的节点延迟`} title="测延迟" disabled={busy || testingGroup !== null} onClick={() => void testGroupDelay(group.name)}><RoundTripIcon testing={testingGroup === group.name} /></button>
+                  <button className={`proxy-group-action signal${testingGroup === group.name ? ' testing' : ''}`} type="button" aria-label={`测试 ${group.name} 的节点延迟`} title="测延迟" disabled={busy || testingGroup !== null} onClick={() => void testGroupDelay(group.name)}><WifiMedium size={30} weight="bold" aria-hidden="true" /></button>
                   <button className="proxy-group-action sort" type="button" aria-label={`${group.name}：当前按${sortMode === 'name' ? '名称' : '延迟'}排序，点击切换为按${sortMode === 'name' ? '延迟' : '名称'}排序`} title={sortMode === 'name' ? '当前按名称排序，点击按延迟排序' : '当前按延迟排序，点击按名称排序'} onClick={() => toggleGroupSort(group.name)}><SortModeIcon mode={sortMode} /></button>
                 </div>
                 <button className="proxy-group-expand" type="button" aria-label={`${expanded ? '收起' : '展开'} ${group.name}`} aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}><span>{group.options?.length ?? 0} 个节点</span><CaretDown size={20} className={expanded ? 'expanded' : ''} /></button>
