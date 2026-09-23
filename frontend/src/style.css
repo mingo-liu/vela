@@ -4,7 +4,7 @@ body { margin: 0; min-width: 600px; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: .52; }
-button:focus-visible, input:focus-visible, select:focus-visible, .file-button:focus-within { outline: 3px solid #ff4965; outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #ff4965; outline-offset: 3px; }
 
 .app-layout { display: flex; min-height: 100vh; }
 .sidebar { width: clamp(225px, 27vw, 500px); flex: 0 0 clamp(225px, 27vw, 500px); display: flex; flex-direction: column; padding: 28px 15px 22px; background: #f5f6f8; border-right: 1px solid #eaebee; }
@@ -127,7 +127,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .subscription-usage { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 9px; border-top: 1px solid #eceef1; color: #7a7d84; font-size: 11px; }
 .subscription-usage strong { margin-left: 3px; color: #24272d; font-size: 12px; }
 .subscription-dates { display: grid; gap: 3px; color: #7a7d84; font-size: 11px; }
-.file-button { display: inline-flex; align-items: center; gap: 11px; margin-top: 25px; padding: 11px 15px; border: 1px solid #f31645; border-radius: 11px; color: #e91543; font-size: 12px; font-weight: 700; cursor: pointer; }
+.file-button { margin-top: 25px; }
 .file-input { display: none; }
 .hint, .http-note { display: block; margin-top: 12px; color: #62666d; font-size: 11px; line-height: 1.5; }
 .http-note { color: #b86928; }
@@ -137,6 +137,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .profile-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .primary-button, .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 39px; padding: 0 14px; border-radius: 10px; font-size: 12px; font-weight: 700; }
 .primary-button { border: 1px solid #ee1643; background: #f31645; color: white; }
+.import-button { width: 150px; min-height: 42px; }
 .secondary-button { border: 1px solid #e0e2e5; background: #fff; color: #53565d; }
 .primary-button:hover:not(:disabled) { background: #d90f3c; }
 .secondary-button:hover:not(:disabled) { background: #f5f6f8; }
