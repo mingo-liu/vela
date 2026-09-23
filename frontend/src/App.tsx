@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ArrowRight, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, PlugsConnected, Stack } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, PlugsConnected, Stack } from '@phosphor-icons/react'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
@@ -35,6 +35,7 @@ export default function App() {
   const [page, setPage] = useState<Page>('home')
   const [state, setState] = useState<State>(empty)
   const [groups, setGroups] = useState<Group[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [nodeNames, setNodeNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -109,12 +110,16 @@ export default function App() {
     setNotice('')
     try {
       await Runtime.Select(group, option)
-      setGroups(await Runtime.Groups() ?? [])
     } catch (error) {
       setNotice(message(error))
     } finally {
+      try { setGroups(await Runtime.Groups() ?? []) } catch (error) { setNotice(message(error)) }
       setBusy(false)
     }
+  }
+
+  const toggleGroup = (name: string, initiallyOpen: boolean) => {
+    setExpandedGroups(current => ({ ...current, [name]: !(current[name] ?? initiallyOpen) }))
   }
 
   const importFile = async (file?: File) => {
@@ -148,50 +153,57 @@ export default function App() {
   }
 
   const running = state.status === 'running'
-  const activeSubscription = subscriptions.find(subscription => subscription.active)
   const connected = state.systemProxyEnabled
-  const statusText = connected ? '系统代理已开启' : state.status === 'starting' ? '正在启动' : state.status === 'stopping' ? '正在停止' : state.status === 'failed' ? '启动失败' : '系统代理已关闭'
+  const statusText = connected ? '系统代理已开启' : state.status === 'starting' ? '正在启动' : state.status === 'stopping' ? '正在停止' : state.status === 'failed' ? '启动失败' : ''
 
   return <div className="app-layout">
     <aside className="sidebar" aria-label="主导航">
-      <div className="brand"><div className="brand-icon"><PlugsConnected size={24} weight="bold" /></div><div><strong>Vela</strong><span>macOS 代理客户端</span></div></div>
+      <div className="brand"><div className="brand-icon"><PlugsConnected size={24} weight="bold" /></div><div><strong>Vela</strong></div></div>
       <nav className="navigation" aria-label="页面">
         {navigation.map(item => <button key={item.id} type="button" className={`nav-item${page === item.id ? ' active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><item.icon size={25} weight="regular" /><span>{item.label}</span></button>)}
       </nav>
-      <div className="sidebar-footer"><span className={`sidebar-dot${connected ? ' connected' : ''}`} /><div><strong>{connected ? '已连接' : '未连接'}</strong><small>{connected ? '系统代理正在运行' : '系统代理已关闭'}</small></div></div>
+      <div className="sidebar-footer"><span className={`sidebar-dot${connected ? ' connected' : ''}`} /><div><strong>{connected ? '已连接' : '未连接'}</strong></div></div>
     </aside>
 
     <main className="content">
       {page === 'home' && <>
-        <div className="page-heading"><div><span className="eyebrow">OVERVIEW</span><h1>Home</h1><p>查看连接状态，快速管理系统代理。</p></div></div>
+        <div className="page-heading"><div><span className="eyebrow">OVERVIEW</span><h1>Home</h1></div></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <section className="panel connection-panel" aria-labelledby="connection-title">
-          <div className="panel-top"><div className="panel-icon"><PlugsConnected size={27} /></div><span className={`state-pill${connected ? ' connected' : ''}`}>{statusText}</span></div>
-          <div className="connection-main"><div><span className="section-kicker">SYSTEM PROXY</span><h2 id="connection-title">{connected ? '连接已就绪' : '准备开始连接'}</h2><p>开启后自动启动内核，并接管当前网络服务的代理设置。</p></div><button className={`system-switch${connected ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={connected} disabled={busy || (!state.hasProfile && !connected)} onClick={() => void execute(() => Runtime.SetSystemProxy(!connected))}><span className="switch-track"><span className="switch-knob" /></span><span>{connected ? '开启' : '关闭'}</span></button></div>
+          <div className="panel-top"><div className="panel-icon"><PlugsConnected size={27} /></div>{statusText && <span className={`state-pill${connected ? ' connected' : ''}`}>{statusText}</span>}</div>
+          <div className="connection-main"><div><span className="section-kicker">SYSTEM PROXY</span><h2 id="connection-title">{connected ? '连接已就绪' : '准备开始连接'}</h2></div><button className={`system-switch${connected ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={connected} disabled={busy || (!state.hasProfile && !connected)} onClick={() => void execute(() => Runtime.SetSystemProxy(!connected))}><span className="switch-track"><span className="switch-knob" /></span><span>{connected ? '开启' : '关闭'}</span></button></div>
           {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>先导入配置以启用系统代理 <ArrowRight size={17} /></button>}
           <div className="connection-meta"><div><span>本地代理</span><strong>127.0.0.1:{state.port}</strong></div><div><span>内核状态</span><strong>{running ? '运行中' : state.status === 'starting' ? '启动中' : '已停止'}</strong></div><div><span>配置文件</span><strong>{state.hasProfile ? '已导入' : '未导入'}</strong></div></div>
         </section>
         <div className="module-grid">
-          <section className="panel module-card"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h3>代理节点</h3><p>{state.hasProfile ? `当前配置有 ${groups.length} 个可选择的策略组。` : '导入配置后查看可选节点。'}</p></div><button className="module-link" type="button" onClick={() => setPage('proxies')}>查看 Proxies <ArrowRight size={17} /></button></section>
-          <section className="panel module-card"><div className="module-icon"><Stack size={24} /></div><div><h3>配置与订阅</h3><p>{state.hasProfile ? '管理已导入的配置，或更新订阅。' : '导入 YAML 文件或订阅地址以开始使用。'}</p></div><button className="module-link" type="button" onClick={() => setPage('profiles')}>查看 Profiles <ArrowRight size={17} /></button></section>
+          <section className="panel module-card"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h3>代理节点</h3></div><button className="module-link" type="button" onClick={() => setPage('proxies')}>查看 Proxies <ArrowRight size={17} /></button></section>
+          <section className="panel module-card"><div className="module-icon"><Stack size={24} /></div><div><h3>配置与订阅</h3></div><button className="module-link" type="button" onClick={() => setPage('profiles')}>查看 Profiles <ArrowRight size={17} /></button></section>
         </div>
       </>}
 
       {page === 'proxies' && <>
-        <div className="page-heading"><div><span className="eyebrow">CONNECTIONS</span><h1>Proxies</h1><p>查看当前配置的节点；运行代理后可调整连接路径。</p></div><span className="heading-count">{groups.length} 个策略组</span></div>
+        <div className="page-heading"><div><span className="eyebrow">CONNECTIONS</span><h1>Proxies</h1></div></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
-        <section className="panel page-panel"><div className="panel-heading"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h2>策略组</h2><p>{running ? '节点选择会立即应用到当前连接。' : '代理尚未运行，以下为配置中的可选节点。'}</p></div></div>
-          {activeSubscription && <div className="proxy-source"><strong>当前订阅</strong><span>{activeSubscription.url}</span><small>剩余流量：{formatBytes(activeSubscription.total !== null && activeSubscription.upload !== null && activeSubscription.download !== null ? Math.max(0, activeSubscription.total - activeSubscription.upload - activeSubscription.download) : null)}　到期：{formatDate(activeSubscription.expiresAt)}</small></div>}
+        <section className="panel page-panel proxies-panel"><div className="panel-heading"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h2>策略组</h2></div></div>
           {!state.hasProfile && <div className="empty-state"><GlobeHemisphereWest size={42} weight="light" /><h3>尚无配置</h3><p>前往 Profiles 导入订阅或本地配置。</p><button className="secondary-button" type="button" onClick={() => setPage('profiles')}>前往 Profiles <ArrowRight size={16} /></button></div>}
           {state.hasProfile && groups.length === 0 && nodeNames.length === 0 && <div className="empty-state"><CheckCircle size={42} weight="light" /><h3>没有可选节点</h3><p>当前配置未提供代理节点或手动策略组。</p></div>}
           {state.hasProfile && groups.length === 0 && nodeNames.length > 0 && <p className="no-groups">当前配置没有手动策略组，下方列出订阅节点。</p>}
-          {groups.map(group => <div className="proxy-row" key={group.name}><div><strong>{group.name}</strong><small>{running ? `当前节点：${group.current}` : `${group.options?.length ?? 0} 个可选节点`}</small></div>{running ? <select aria-label={`选择 ${group.name} 节点`} value={group.current} disabled={busy} onChange={e => void select(group.name, e.target.value)}>{(group.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}</select> : <div className="proxy-options" aria-label={`${group.name} 可选节点`}>{(group.options ?? []).map(option => <span key={option}>{option}</span>)}</div>}</div>)}
-          {nodeNames.length > 0 && <div className="profile-nodes"><h3>当前配置节点 <small>{nodeNames.length} 个</small></h3><div className="proxy-options" aria-label="当前配置节点">{nodeNames.map(name => <span key={name}>{name}</span>)}</div></div>}
+          <div className="proxy-group-stack">{groups.map((group, index) => {
+            const expanded = expandedGroups[group.name] ?? index === 0
+            return <section className="proxy-group" key={group.name} aria-label={`${group.name} 策略组`}>
+              <button className="proxy-group-toggle" type="button" aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}>
+                <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">Selector</span><span>{running ? '当前节点' : '预选节点'}：{group.current || '未选择'}</span></small></span>
+                <span className="proxy-group-end"><span>{group.options?.length ?? 0} 个节点</span><CaretDown size={20} className={expanded ? 'expanded' : ''} /></span>
+              </button>
+              {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{(group.options ?? []).map(option => <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={busy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span>{groups.some(candidate => candidate.name === option) ? '策略组' : nodeNames.includes(option) ? '代理节点' : '内置节点'}</span></button>)}</div>}
+            </section>
+          })}</div>
+          {groups.length === 0 && nodeNames.length > 0 && <div className="profile-nodes"><h3>当前配置节点 <small>{nodeNames.length} 个</small></h3><div className="proxy-options" aria-label="当前配置节点">{nodeNames.map(name => <span key={name}>{name}</span>)}</div></div>}
         </section>
       </>}
 
       {page === 'profiles' && <>
-        <div className="page-heading"><div><span className="eyebrow">CONFIGURATION</span><h1>Profiles</h1><p>导入配置文件或订阅地址，管理代理来源。</p></div><span className={`heading-badge${state.hasProfile ? ' ready' : ''}`}>{state.hasProfile ? '配置已就绪' : '等待导入'}</span></div>
+        <div className="page-heading"><div><span className="eyebrow">CONFIGURATION</span><h1>Profiles</h1></div><span className={`heading-badge${state.hasProfile ? ' ready' : ''}`}>{state.hasProfile ? '配置已就绪' : '等待导入'}</span></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <div className="profile-stack">
           <section className="subscription-section" aria-label="已保存的订阅">
