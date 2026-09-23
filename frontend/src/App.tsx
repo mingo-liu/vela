@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, PlugsConnected, Stack, WifiMedium } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, GlobeHemisphereWest, House, LinkSimple, Stack, WifiMedium } from '@phosphor-icons/react'
 import velaIcon from '../../build/appicon.icon/Assets/vela_icon.svg'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
@@ -207,7 +207,6 @@ export default function App() {
 
   const running = state.status === 'running'
   const connected = state.systemProxyEnabled
-  const statusText = connected ? '系统代理已开启' : state.status === 'starting' ? '正在启动' : state.status === 'stopping' ? '正在停止' : state.status === 'failed' ? '启动失败' : ''
 
   return <div className="app-layout">
     <aside className="sidebar" aria-label="主导航">
@@ -223,7 +222,6 @@ export default function App() {
         <div className="page-heading"><h1>Home</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <section className="panel connection-panel" aria-labelledby="connection-title">
-          <div className="panel-top"><div className="panel-icon"><PlugsConnected size={27} /></div>{statusText && <span className={`state-pill${connected ? ' connected' : ''}`}>{statusText}</span>}</div>
           <div className="connection-main"><div><span className="section-kicker">SYSTEM PROXY</span><h2 id="connection-title">{connected ? '连接已就绪' : '准备开始连接'}</h2></div><button className={`system-switch${connected ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={connected} disabled={busy || (!state.hasProfile && !connected)} onClick={() => void execute(() => Runtime.SetSystemProxy(!connected))}><span className="switch-track"><span className="switch-knob" /></span><span>{connected ? '开启' : '关闭'}</span></button></div>
           {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>先导入配置以启用系统代理 <ArrowRight size={17} /></button>}
           <div className="connection-meta"><div><span>本地代理</span><strong>127.0.0.1:{state.port}</strong></div><div><span>内核状态</span><strong>{running ? '运行中' : state.status === 'starting' ? '启动中' : '已停止'}</strong></div><div><span>配置文件</span><strong>{state.hasProfile ? '已导入' : '未导入'}</strong></div></div>
@@ -279,10 +277,9 @@ export default function App() {
                 const domain = subscriptionDomain(subscription.url)
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
-                    <span className={`subscription-status${subscription.active ? ' active' : ''}`}>{subscription.active ? '当前' : '已保存'}</span>
                     <button className="subscription-refresh" type="button" disabled={busy || running} aria-label={subscription.active ? '更新此订阅' : '更新并设为当前配置'} title={subscription.active ? '更新此订阅' : '更新并设为当前配置'} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                   </div>
-                  <button className="subscription-select" type="button" aria-label={`选择订阅 ${domain}`} aria-pressed={subscription.active} disabled={busy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
+                  <button className="subscription-select" type="button" aria-label={`${subscription.active ? '当前订阅' : '选择订阅'} ${domain}`} aria-pressed={subscription.active} disabled={busy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
                     <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
                     <span className="subscription-usage"><span>剩余 <strong>{formatBytes(remaining)}</strong></span><span>总量 <strong>{formatBytes(subscription.total)}</strong></span></span>
                     <span className="subscription-dates"><span>到期 {formatDate(subscription.expiresAt)}</span><span>更新 {formatDate(subscription.updatedAt)}</span></span>
