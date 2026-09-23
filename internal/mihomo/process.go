@@ -143,15 +143,106 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cmd != nil {
-		return r.state, errors.New("请先停止内核再切换订阅")
+	if r.cmd != nil && r.state.Status != "running" {
+		return r.state, errors.New("内核正在切换状态，请稍后重试")
+	}
+	running := r.cmd != nil
+	var previousProfile []byte
+	var previousConfig []byte
+	var previousSubscriptions []profile.Subscription
+	if running {
+		var err error
+		previousProfile, err = r.store.Load()
+		if err != nil {
+			return r.state, err
+		}
+		previousConfig, err = profile.Compile(previousProfile, r.state.Port, r.apiPort, r.secret)
+		if err != nil {
+			return r.state, err
+		}
+		previousSubscriptions, err = r.subs.List()
+		if err != nil {
+			return r.state, err
+		}
 	}
 	if err := r.subs.Select(context.Background(), id); err != nil {
 		return r.state, err
 	}
+	if running {
+		if err := r.reloadSelectedProfile(previousProfile, previousConfig, previousSubscriptions); err != nil {
+			return r.state, err
+		}
+	}
 	r.state.HasProfile, r.state.Error = true, ""
 	r.emit()
 	return r.state, nil
+}
+
+// reloadSelectedProfile keeps the current process and system proxy in place.
+// If reloading fails, both the saved selection and the running config are restored.
+func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, previousSubscriptions []profile.Subscription) error {
+	rollback := func(cause error, reload bool) error {
+		var restoreErr error
+		activeID := ""
+		for _, subscription := range previousSubscriptions {
+			if subscription.Active {
+				activeID = subscription.ID
+				break
+			}
+		}
+		if activeID == "" {
+			restoreErr = r.subs.ImportLocal(string(previousProfile))
+		} else {
+			restoreErr = r.subs.Select(context.Background(), activeID)
+		}
+		if !reload {
+			return errors.Join(cause, restoreErr)
+		}
+		fileErr := writePrivate(filepath.Join(r.dataDir, "runtime.yaml"), previousConfig)
+		select {
+		case <-r.done:
+			return errors.Join(cause, restoreErr, fileErr)
+		default:
+		}
+		reloadErr := r.reloadConfig(previousConfig)
+		return errors.Join(cause, restoreErr, fileErr, reloadErr)
+	}
+
+	raw, err := r.store.Load()
+	if err != nil {
+		return rollback(err, false)
+	}
+	if err := r.ensureGeoIPDatabase(raw); err != nil {
+		return rollback(err, false)
+	}
+	compiled, err := profile.Compile(raw, r.state.Port, r.apiPort, r.secret)
+	if err != nil {
+		return rollback(err, false)
+	}
+	if err := writePrivate(filepath.Join(r.dataDir, "runtime.yaml"), compiled); err != nil {
+		return rollback(err, false)
+	}
+	if err := r.reloadConfig(compiled); err != nil {
+		return rollback(fmt.Errorf("切换订阅时重载内核配置失败: %w", err), true)
+	}
+	if err := r.waitReady(r.done); err != nil {
+		return rollback(fmt.Errorf("切换订阅后内核未就绪: %w", err), true)
+	}
+	if selected, err := r.store.SelectedOptions(); err == nil {
+		for group, option := range selected {
+			_ = r.selectController(group, option)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) reloadConfig(compiled []byte) error {
+	body, err := json.Marshal(map[string]string{"payload": string(compiled)})
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 15 * time.Second, Transport: r.client.Transport}
+	return r.requestWithClient(client, http.MethodPut, "/configs?force=true", strings.NewReader(string(body)), nil)
 }
 
 func (r *Runner) Start() (State, error) {
@@ -604,6 +695,10 @@ func (r *Runner) waitReady(done <-chan struct{}) error {
 }
 
 func (r *Runner) request(method, path string, body *strings.Reader, out any) error {
+	return r.requestWithClient(r.client, method, path, body, out)
+}
+
+func (r *Runner) requestWithClient(client *http.Client, method, path string, body *strings.Reader, out any) error {
 	var reader *strings.Reader
 	if body != nil {
 		reader = body
@@ -618,7 +713,7 @@ func (r *Runner) request(method, path string, body *strings.Reader, out any) err
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := r.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

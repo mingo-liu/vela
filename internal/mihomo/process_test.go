@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -106,6 +107,88 @@ rules:
 	if err == nil || state.Status != "stopped" || state.SystemProxyEnabled {
 		t.Fatalf("core was not stopped after system proxy enable failed: %+v, %v", state, err)
 	}
+}
+
+func TestSelectSubscriptionWhileSystemProxyEnabled(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to run the real core integration test")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := "One"
+		if r.URL.Path == "/two" {
+			name = "Two"
+		}
+		_, _ = w.Write([]byte("proxy-groups:\n  - name: " + name + "\n    type: select\n    proxies: [DIRECT, REJECT]\nrules:\n  - MATCH,DIRECT\n"))
+	}))
+	defer server.Close()
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	subs := profile.NewSubscriptions(store, &testURLStore{})
+	systemProxy := &testSystemProxy{}
+	runner := NewRunner(store, subs, dir, binary, port, systemProxy, nil)
+	t.Cleanup(runner.Close)
+	if _, err := runner.ImportSubscription(server.URL + "/one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.ImportSubscription(server.URL + "/two"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := subs.List()
+	if err != nil || len(list) != 2 {
+		t.Fatalf("subscriptions: %+v, %v", list, err)
+	}
+	server.Close() // Selection must use the cached profile.
+	if state, err := runner.SelectSubscription(list[0].ID); err != nil || state.Status != "stopped" || state.SystemProxyEnabled {
+		t.Fatalf("switch while disconnected: %+v, %v", state, err)
+	}
+	if state, err := runner.SelectSubscription(list[1].ID); err != nil || state.Status != "stopped" || state.SystemProxyEnabled {
+		t.Fatalf("switch back while disconnected: %+v, %v", state, err)
+	}
+	if _, err := runner.SetSystemProxy(true); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runner.SelectSubscription(list[0].ID)
+	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("switch while connected: %+v, %v", state, err)
+	}
+	groups, err := runner.Groups()
+	if err != nil || !hasGroup(groups, "One") || hasGroup(groups, "Two") {
+		t.Fatalf("running config was not reloaded: %+v, %v", groups, err)
+	}
+	list, err = subs.List()
+	if err != nil || !list[0].Active || list[1].Active {
+		t.Fatalf("saved selection: %+v, %v", list, err)
+	}
+	// A cached YAML can pass Vela's structural checks but fail mihomo's parser.
+	bad := "proxy-groups:\n  - name: Bad\n    type: select\n    proxies: [Missing]\nrules:\n  - MATCH,DIRECT\n"
+	if err := os.WriteFile(filepath.Join(dir, "subscriptions", list[1].ID+".yaml"), []byte(bad), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if state, err = runner.SelectSubscription(list[1].ID); err == nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
+		t.Fatalf("failed switch changed connection: %+v, %v", state, err)
+	}
+	list, err = subs.List()
+	if err != nil || !list[0].Active || list[1].Active {
+		t.Fatalf("failed switch changed saved selection: %+v, %v", list, err)
+	}
+	groups, err = runner.Groups()
+	if err != nil || !hasGroup(groups, "One") || hasGroup(groups, "Bad") {
+		t.Fatalf("failed switch changed running config: %+v, %v", groups, err)
+	}
+}
+
+func hasGroup(groups []Group, name string) bool {
+	for _, group := range groups {
+		if group.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestGroupsAvailableBeforeCoreStarts(t *testing.T) {

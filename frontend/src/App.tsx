@@ -283,7 +283,7 @@ export default function App() {
                     <span className={`subscription-status${subscription.active ? ' active' : ''}`}>{subscription.active ? '当前' : '已保存'}</span>
                     <button className="subscription-refresh" type="button" disabled={busy || running} aria-label={subscription.active ? '更新此订阅' : '更新并设为当前配置'} title={subscription.active ? '更新此订阅' : '更新并设为当前配置'} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                   </div>
-                  <button className="subscription-select" type="button" aria-label={`选择订阅 ${domain}`} aria-pressed={subscription.active} disabled={busy || running || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
+                  <button className="subscription-select" type="button" aria-label={`选择订阅 ${domain}`} aria-pressed={subscription.active} disabled={busy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
                     <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
                     <span className="subscription-usage"><span>剩余 <strong>{formatBytes(remaining)}</strong></span><span>总量 <strong>{formatBytes(subscription.total)}</strong></span></span>
                     <span className="subscription-dates"><span>到期 {formatDate(subscription.expiresAt)}</span><span>更新 {formatDate(subscription.updatedAt)}</span></span>
