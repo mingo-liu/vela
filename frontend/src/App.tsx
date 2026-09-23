@@ -35,10 +35,12 @@ export default function App() {
   const [page, setPage] = useState<Page>('home')
   const [state, setState] = useState<State>(empty)
   const [groups, setGroups] = useState<Group[]>([])
+  const [nodeNames, setNodeNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [subscriptionURL, setSubscriptionURL] = useState('')
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
+  const [profileRevision, setProfileRevision] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -57,20 +59,27 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (state.status !== 'running') { setGroups([]); return }
+    if (!state.hasProfile) { setGroups([]); return }
     let active = true
     Runtime.Groups().then(value => { if (active) setGroups(value ?? []) })
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
-  }, [state.status])
+  }, [state.status, state.hasProfile, profileRevision])
 
   useEffect(() => {
-    if (page !== 'profiles') return
+    if (!state.hasProfile) { setNodeNames([]); return }
+    let active = true
+    Runtime.NodeNames().then(value => { if (active) setNodeNames(value ?? []) })
+      .catch(error => { if (active) setNotice(message(error)) })
+    return () => { active = false }
+  }, [state.hasProfile, profileRevision])
+
+  useEffect(() => {
     let active = true
     Runtime.Subscriptions().then(value => { if (active) setSubscriptions(value ?? []) })
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
-  }, [page])
+  }, [])
 
   const refreshSubscriptions = async () => {
     try {
@@ -116,7 +125,7 @@ export default function App() {
     }
     try {
       const contents = await file.text()
-      if (await execute(() => Runtime.ImportProfile(contents))) await refreshSubscriptions()
+      if (await execute(() => Runtime.ImportProfile(contents))) { await refreshSubscriptions(); setProfileRevision(value => value + 1) }
     } catch (error) {
       setNotice(message(error))
     }
@@ -126,14 +135,20 @@ export default function App() {
     if (await execute(() => Runtime.ImportSubscription(subscriptionURL))) {
       setSubscriptionURL('')
       await refreshSubscriptions()
+      setProfileRevision(value => value + 1)
     }
   }
 
   const updateSubscription = async (id: string) => {
-    if (await execute(() => Runtime.UpdateSubscription(id))) await refreshSubscriptions()
+    if (await execute(() => Runtime.UpdateSubscription(id))) { await refreshSubscriptions(); setProfileRevision(value => value + 1) }
+  }
+
+  const selectSubscription = async (id: string) => {
+    if (await execute(() => Runtime.SelectSubscription(id))) { await refreshSubscriptions(); setProfileRevision(value => value + 1) }
   }
 
   const running = state.status === 'running'
+  const activeSubscription = subscriptions.find(subscription => subscription.active)
   const connected = state.systemProxyEnabled
   const statusText = connected ? '系统代理已开启' : state.status === 'starting' ? '正在启动' : state.status === 'stopping' ? '正在停止' : state.status === 'failed' ? '启动失败' : '系统代理已关闭'
 
@@ -157,18 +172,21 @@ export default function App() {
           <div className="connection-meta"><div><span>本地代理</span><strong>127.0.0.1:{state.port}</strong></div><div><span>内核状态</span><strong>{running ? '运行中' : state.status === 'starting' ? '启动中' : '已停止'}</strong></div><div><span>配置文件</span><strong>{state.hasProfile ? '已导入' : '未导入'}</strong></div></div>
         </section>
         <div className="module-grid">
-          <section className="panel module-card"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h3>代理节点</h3><p>{running ? `当前有 ${groups.length} 个可选择的策略组。` : '开启系统代理后选择策略组节点。'}</p></div><button className="module-link" type="button" onClick={() => setPage('proxies')}>查看 Proxies <ArrowRight size={17} /></button></section>
+          <section className="panel module-card"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h3>代理节点</h3><p>{state.hasProfile ? `当前配置有 ${groups.length} 个可选择的策略组。` : '导入配置后查看可选节点。'}</p></div><button className="module-link" type="button" onClick={() => setPage('proxies')}>查看 Proxies <ArrowRight size={17} /></button></section>
           <section className="panel module-card"><div className="module-icon"><Stack size={24} /></div><div><h3>配置与订阅</h3><p>{state.hasProfile ? '管理已导入的配置，或更新订阅。' : '导入 YAML 文件或订阅地址以开始使用。'}</p></div><button className="module-link" type="button" onClick={() => setPage('profiles')}>查看 Profiles <ArrowRight size={17} /></button></section>
         </div>
       </>}
 
       {page === 'proxies' && <>
-        <div className="page-heading"><div><span className="eyebrow">CONNECTIONS</span><h1>Proxies</h1><p>选择策略组中的节点，调整连接路径。</p></div><span className="heading-count">{groups.length} 个策略组</span></div>
+        <div className="page-heading"><div><span className="eyebrow">CONNECTIONS</span><h1>Proxies</h1><p>查看当前配置的节点；运行代理后可调整连接路径。</p></div><span className="heading-count">{groups.length} 个策略组</span></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
-        <section className="panel page-panel"><div className="panel-heading"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h2>策略组</h2><p>节点选择会立即应用到当前连接。</p></div></div>
-          {!running && <div className="empty-state"><GlobeHemisphereWest size={42} weight="light" /><h3>代理尚未运行</h3><p>前往 Home 开启系统代理，即可查看可选节点。</p><button className="secondary-button" type="button" onClick={() => setPage('home')}>前往 Home <ArrowRight size={16} /></button></div>}
-          {running && groups.length === 0 && <div className="empty-state"><CheckCircle size={42} weight="light" /><h3>没有手动策略组</h3><p>当前配置未提供需要手动选择的节点。</p></div>}
-          {groups.map(group => <div className="proxy-row" key={group.name}><div><strong>{group.name}</strong><small>当前节点：{group.current}</small></div><select aria-label={`选择 ${group.name} 节点`} value={group.current} disabled={busy} onChange={e => void select(group.name, e.target.value)}>{(group.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}</select></div>)}
+        <section className="panel page-panel"><div className="panel-heading"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h2>策略组</h2><p>{running ? '节点选择会立即应用到当前连接。' : '代理尚未运行，以下为配置中的可选节点。'}</p></div></div>
+          {activeSubscription && <div className="proxy-source"><strong>当前订阅</strong><span>{activeSubscription.url}</span><small>剩余流量：{formatBytes(activeSubscription.total !== null && activeSubscription.upload !== null && activeSubscription.download !== null ? Math.max(0, activeSubscription.total - activeSubscription.upload - activeSubscription.download) : null)}　到期：{formatDate(activeSubscription.expiresAt)}</small></div>}
+          {!state.hasProfile && <div className="empty-state"><GlobeHemisphereWest size={42} weight="light" /><h3>尚无配置</h3><p>前往 Profiles 导入订阅或本地配置。</p><button className="secondary-button" type="button" onClick={() => setPage('profiles')}>前往 Profiles <ArrowRight size={16} /></button></div>}
+          {state.hasProfile && groups.length === 0 && nodeNames.length === 0 && <div className="empty-state"><CheckCircle size={42} weight="light" /><h3>没有可选节点</h3><p>当前配置未提供代理节点或手动策略组。</p></div>}
+          {state.hasProfile && groups.length === 0 && nodeNames.length > 0 && <p className="no-groups">当前配置没有手动策略组，下方列出订阅节点。</p>}
+          {groups.map(group => <div className="proxy-row" key={group.name}><div><strong>{group.name}</strong><small>{running ? `当前节点：${group.current}` : `${group.options?.length ?? 0} 个可选节点`}</small></div>{running ? <select aria-label={`选择 ${group.name} 节点`} value={group.current} disabled={busy} onChange={e => void select(group.name, e.target.value)}>{(group.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}</select> : <div className="proxy-options" aria-label={`${group.name} 可选节点`}>{(group.options ?? []).map(option => <span key={option}>{option}</span>)}</div>}</div>)}
+          {nodeNames.length > 0 && <div className="profile-nodes"><h3>当前配置节点 <small>{nodeNames.length} 个</small></h3><div className="proxy-options" aria-label="当前配置节点">{nodeNames.map(name => <span key={name}>{name}</span>)}</div></div>}
         </section>
       </>}
 
@@ -183,14 +201,16 @@ export default function App() {
               {subscriptions.map(subscription => {
                 const remaining = subscription.total !== null && subscription.upload !== null && subscription.download !== null
                   ? Math.max(0, subscription.total - subscription.upload - subscription.download) : null
-                return <article className="panel subscription-card" key={subscription.id}>
+                return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
                     <span className={`subscription-status${subscription.active ? ' active' : ''}`}>{subscription.active ? '当前' : '已保存'}</span>
                     <button className="subscription-refresh" type="button" disabled={busy || running} aria-label={subscription.active ? '更新此订阅' : '更新并设为当前配置'} title={subscription.active ? '更新此订阅' : '更新并设为当前配置'} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                   </div>
-                  <div className="subscription-url" title={subscription.url}><LinkSimple size={15} /><span>{subscription.url}</span></div>
-                  <div className="subscription-usage"><span>剩余 <strong>{formatBytes(remaining)}</strong></span><span>总量 <strong>{formatBytes(subscription.total)}</strong></span></div>
-                  <div className="subscription-dates"><span>到期 {formatDate(subscription.expiresAt)}</span><span>更新 {formatDate(subscription.updatedAt)}</span></div>
+                  <button className="subscription-select" type="button" aria-label={`选择订阅 ${subscription.url}`} aria-pressed={subscription.active} disabled={busy || running || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
+                    <span className="subscription-url" title={subscription.url}><LinkSimple size={15} /><span>{subscription.url}</span></span>
+                    <span className="subscription-usage"><span>剩余 <strong>{formatBytes(remaining)}</strong></span><span>总量 <strong>{formatBytes(subscription.total)}</strong></span></span>
+                    <span className="subscription-dates"><span>到期 {formatDate(subscription.expiresAt)}</span><span>更新 {formatDate(subscription.updatedAt)}</span></span>
+                  </button>
                 </article>
               })}
             </div>

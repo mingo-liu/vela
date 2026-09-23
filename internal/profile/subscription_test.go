@@ -142,3 +142,67 @@ func TestSubscriptionCardsAndLegacyMigration(t *testing.T) {
 		t.Fatal("invalid update time")
 	}
 }
+
+func TestSelectSubscriptionUsesCachedProfileOffline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := "One"
+		if r.URL.Path == "/two" {
+			name = "Two"
+		}
+		_, _ = w.Write([]byte("proxy-groups:\n  - name: " + name + "\n    type: select\n    proxies: [DIRECT, REJECT]\nrules: [MATCH,DIRECT]\n"))
+	}))
+	store := NewStore(t.TempDir())
+	subs := NewSubscriptions(store, &memoryURLStore{})
+	if err := subs.Import(context.Background(), server.URL+"/one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Import(context.Background(), server.URL+"/two"); err != nil {
+		t.Fatal(err)
+	}
+	server.Close()
+	list, err := subs.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Select(context.Background(), list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := store.SelectorGroups()
+	if err != nil || len(groups) != 1 || groups[0].Name != "One" || len(groups[0].Options) != 2 {
+		t.Fatalf("selected first subscription: %+v, %v", groups, err)
+	}
+	list, err = subs.List()
+	if err != nil || !list[0].Active || list[1].Active {
+		t.Fatalf("active subscription: %+v, %v", list, err)
+	}
+	if err := subs.Select(context.Background(), list[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = store.SelectorGroups()
+	if err != nil || len(groups) != 1 || groups[0].Name != "Two" {
+		t.Fatalf("selected second subscription: %+v, %v", groups, err)
+	}
+}
+
+func TestLegacyActiveSubscriptionIsCachedBeforeSwitch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("proxy-groups:\n  - name: New\n    type: select\n    proxies: [DIRECT]\n"))
+	}))
+	store := NewStore(t.TempDir())
+	if err := store.Import("proxy-groups:\n  - name: Legacy\n    type: select\n    proxies: [REJECT]\n"); err != nil {
+		t.Fatal(err)
+	}
+	keychain := &memoryURLStore{value: server.URL + "/legacy"}
+	subs := NewSubscriptions(store, keychain)
+	if err := subs.Import(context.Background(), server.URL+"/new"); err != nil {
+		t.Fatal(err)
+	}
+	server.Close()
+	if err := subs.Select(context.Background(), subscriptionID(server.URL+"/legacy")); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := store.SelectorGroups()
+	if err != nil || len(groups) != 1 || groups[0].Name != "Legacy" {
+		t.Fatalf("legacy profile was not restored: %+v, %v", groups, err)
+	}
+}

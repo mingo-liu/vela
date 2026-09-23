@@ -69,6 +69,26 @@ rules:
 	}
 }
 
+func TestGroupsAvailableBeforeCoreStarts(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if err := store.Import("proxies:\n  - name: Node A\n    type: socks5\n    server: example.com\n    port: 1080\nproxy-groups:\n  - name: Choose\n    type: select\n    proxies: [Node A, DIRECT]\n  - name: Auto\n    type: url-test\n    proxies: [DIRECT]\nrules: [MATCH,DIRECT]\n"); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, "", 7890, nil, nil)
+	groups, err := runner.Groups()
+	if err != nil || len(groups) != 1 || groups[0].Name != "Choose" || groups[0].Current != "Node A" || len(groups[0].Options) != 2 {
+		t.Fatalf("offline groups: %+v, %v", groups, err)
+	}
+	nodes, err := runner.NodeNames()
+	if err != nil || len(nodes) != 1 || nodes[0] != "Node A" {
+		t.Fatalf("offline nodes: %+v, %v", nodes, err)
+	}
+	if err := runner.Select("Choose", "REJECT"); err == nil {
+		t.Fatal("offline selection unexpectedly changed the connection")
+	}
+}
+
 type testSystemProxy struct {
 	enabled     bool
 	failEnable  bool

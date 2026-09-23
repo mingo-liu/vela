@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -111,6 +112,26 @@ func (s *Subscriptions) List() ([]Subscription, error) {
 	return catalog.Subscriptions, err
 }
 
+func (s *Subscriptions) preserveActive(catalog subscriptionCatalog) error {
+	for _, subscription := range catalog.Subscriptions {
+		if !subscription.Active || !s.profiles.Exists() {
+			continue
+		}
+		id := subscriptionID(subscription.URL)
+		if _, err := s.profiles.LoadSubscription(id); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		data, err := s.profiles.Load()
+		if err != nil {
+			return err
+		}
+		return s.profiles.SaveSubscription(id, string(data))
+	}
+	return nil
+}
+
 func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	data, info, err := s.fetch(ctx, address)
 	if err != nil {
@@ -121,6 +142,9 @@ func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	}
 	catalog, raw, err := s.catalog()
 	if err != nil {
+		return err
+	}
+	if err := s.preserveActive(catalog); err != nil {
 		return err
 	}
 	for i := range catalog.Subscriptions {
@@ -137,6 +161,9 @@ func (s *Subscriptions) Import(ctx context.Context, address string) error {
 	}
 	if !found {
 		catalog.Subscriptions = append(catalog.Subscriptions, info)
+	}
+	if err := s.profiles.SaveSubscription(subscriptionID(address), string(data)); err != nil {
+		return err
 	}
 	if err := s.save(catalog); err != nil {
 		return err
@@ -156,6 +183,9 @@ func (s *Subscriptions) ImportLocal(data string) error {
 	if err != nil {
 		return err
 	}
+	if err := s.preserveActive(catalog); err != nil {
+		return err
+	}
 	for i := range catalog.Subscriptions {
 		catalog.Subscriptions[i].Active = false
 	}
@@ -172,6 +202,9 @@ func (s *Subscriptions) ImportLocal(data string) error {
 func (s *Subscriptions) Update(ctx context.Context, id string) error {
 	catalog, raw, err := s.catalog()
 	if err != nil {
+		return err
+	}
+	if err := s.preserveActive(catalog); err != nil {
 		return err
 	}
 	index := -1
@@ -196,6 +229,50 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 	}
 	info.ID, info.URL, info.Active = id, catalog.Subscriptions[index].URL, true
 	catalog.Subscriptions[index] = info
+	if err := s.profiles.SaveSubscription(subscriptionID(info.URL), string(data)); err != nil {
+		return err
+	}
+	if err := s.save(catalog); err != nil {
+		return err
+	}
+	if err := s.profiles.Import(string(data)); err != nil {
+		s.restore(raw)
+		return err
+	}
+	return nil
+}
+
+func (s *Subscriptions) Select(ctx context.Context, id string) error {
+	catalog, raw, err := s.catalog()
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return ErrNoSubscription
+	}
+	if err := s.preserveActive(catalog); err != nil {
+		return err
+	}
+	if catalog.Subscriptions[index].Active {
+		return nil
+	}
+	data, err := s.profiles.LoadSubscription(subscriptionID(catalog.Subscriptions[index].URL))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return s.Update(ctx, id)
+	}
+	for i := range catalog.Subscriptions {
+		catalog.Subscriptions[i].Active = i == index
+	}
 	if err := s.save(catalog); err != nil {
 		return err
 	}

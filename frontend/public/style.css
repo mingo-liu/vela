@@ -74,6 +74,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .proxy-row strong { display: block; font-size: 15px; }
 .proxy-row small { display: block; margin-top: 5px; color: #62666d; font-size: 12px; }
 .proxy-row select { width: min(48%, 250px); padding: 10px 12px; border: 1px solid #dfe1e5; border-radius: 10px; background: #f9fafb; color: #25282e; font-size: 12px; }
+.proxy-source { display: grid; gap: 4px; overflow-wrap: anywhere; margin: 18px 0 4px; padding: 12px 14px; border-radius: 10px; background: #f9fafb; color: #62666d; font-size: 12px; }
+.proxy-source strong { color: #24272d; }
+.proxy-source small { color: #7a7d84; font-size: 11px; }
+.proxy-options { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; max-width: 65%; }
+.proxy-options span { padding: 6px 9px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; color: #42464d; font-size: 11px; overflow-wrap: anywhere; }
+.profile-nodes { padding-top: 20px; border-top: 1px solid #eceef1; }
+.profile-nodes h3 { margin: 0 0 12px; font-size: 14px; }
+.profile-nodes h3 small { margin-left: 5px; color: #7a7d84; font-size: 11px; font-weight: 400; }
+.profile-nodes .proxy-options { justify-content: flex-start; max-width: none; }
+.no-groups { margin: 22px 0; color: #62666d; font-size: 12px; }
 .profile-stack { display: grid; gap: 17px; }
 .profile-card { padding: 27px 30px; }
 .subscription-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
@@ -81,11 +91,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:fo
 .subscription-section-heading span { color: #7a7d84; font-size: 12px; }
 .subscription-empty { padding: 24px 28px; color: #62666d; font-size: 12px; }
 .subscription-grid { display: grid; grid-template-columns: repeat(auto-fill, min(100%, 320px)); gap: 12px; }
-.subscription-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px; }
+.subscription-card { position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px; }
+.subscription-card.selected { border-color: #f4a6b6; }
+.subscription-card.selected .subscription-select { opacity: 1; }
 .subscription-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.subscription-select { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.subscription-select::before { position: absolute; inset: 0; content: ""; }
+.subscription-select:disabled { cursor: default; }
+.subscription-select:focus-visible { outline: 2px solid #e91543; outline-offset: 4px; border-radius: 3px; }
+.subscription-select:not(:disabled):hover .subscription-url { color: #e91543; }
 .subscription-status { border-radius: 50px; padding: 4px 8px; background: #f1f2f4; color: #777b82; font-size: 10px; font-weight: 700; }
 .subscription-status.active { color: #25885e; background: #edf9f2; }
-.subscription-refresh { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
+.subscription-refresh { position: relative; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
 .subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
 .subscription-url { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: #24272d; font-size: 12px; line-height: 1.4; user-select: text; }
 .subscription-url svg { flex: none; margin-top: 1px; color: #f31645; }
@@ -130,4 +147,5 @@ footer { margin-top: 31px; color: #a0a2a8; font-size: 11px; text-align: center; 
   .page-heading { align-items: start; flex-direction: column; gap: 10px; }
   .proxy-row { align-items: stretch; flex-direction: column; }
   .proxy-row select { width: 100%; }
+  .proxy-options { justify-content: flex-start; max-width: 100%; }
 }

@@ -26,10 +26,32 @@ func (s *Store) Import(data string) error {
 	if _, err := Compile([]byte(data), 7890, 9090, "validation-secret"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
+	return writeProfile(s.path, data)
+}
+
+func (s *Store) SaveSubscription(id, data string) error {
+	if _, err := Compile([]byte(data), 7890, 9090, "validation-secret"); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(s.path), ".profile-*")
+	return writeProfile(filepath.Join(filepath.Dir(s.path), "subscriptions", id+".yaml"), data)
+}
+
+func (s *Store) LoadSubscription(id string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(s.path), "subscriptions", id+".yaml"))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxConfigSize {
+		return nil, errors.New("配置不能超过 2 MiB")
+	}
+	return data, nil
+}
+
+func writeProfile(path, data string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".profile-*")
 	if err != nil {
 		return err
 	}
@@ -49,7 +71,7 @@ func (s *Store) Import(data string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), s.path)
+	return os.Rename(f.Name(), path)
 }
 
 func (s *Store) Load() ([]byte, error) {
@@ -69,6 +91,57 @@ func (s *Store) Load() ([]byte, error) {
 func (s *Store) Exists() bool {
 	_, err := os.Stat(s.path)
 	return err == nil
+}
+
+type SelectorGroup struct {
+	Name    string
+	Options []string
+}
+
+func (s *Store) SelectorGroups() ([]SelectorGroup, error) {
+	data, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+	var config struct {
+		Groups []struct {
+			Name    string   `yaml:"name"`
+			Type    string   `yaml:"type"`
+			Proxies []string `yaml:"proxies"`
+		} `yaml:"proxy-groups"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("无法读取策略组: %w", err)
+	}
+	groups := make([]SelectorGroup, 0)
+	for _, group := range config.Groups {
+		if strings.EqualFold(group.Type, "select") {
+			groups = append(groups, SelectorGroup{Name: group.Name, Options: group.Proxies})
+		}
+	}
+	return groups, nil
+}
+
+func (s *Store) NodeNames() ([]string, error) {
+	data, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+	var config struct {
+		Proxies []struct {
+			Name string `yaml:"name"`
+		} `yaml:"proxies"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("无法读取代理节点: %w", err)
+	}
+	names := make([]string, 0, len(config.Proxies))
+	for _, proxy := range config.Proxies {
+		if proxy.Name != "" {
+			names = append(names, proxy.Name)
+		}
+	}
+	return names, nil
 }
 
 // Compile preserves compatible user settings while taking ownership of every

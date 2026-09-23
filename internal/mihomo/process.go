@@ -136,6 +136,22 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 	return r.state, nil
 }
 
+func (r *Runner) SelectSubscription(id string) (State, error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil {
+		return r.state, errors.New("请先停止内核再切换订阅")
+	}
+	if err := r.subs.Select(context.Background(), id); err != nil {
+		return r.state, err
+	}
+	r.state.HasProfile, r.state.Error = true, ""
+	r.emit()
+	return r.state, nil
+}
+
 func (r *Runner) Start() (State, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -358,7 +374,20 @@ func (r *Runner) Groups() ([]Group, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.state.Status != "running" {
-		return nil, errors.New("内核尚未运行")
+		selectors, err := r.store.SelectorGroups()
+		if err != nil {
+			return nil, err
+		}
+		groups := make([]Group, 0, len(selectors))
+		for _, selector := range selectors {
+			current := ""
+			if len(selector.Options) > 0 {
+				current = selector.Options[0]
+			}
+			groups = append(groups, Group{Name: selector.Name, Current: current, Options: selector.Options})
+		}
+		sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		return groups, nil
 	}
 	var response struct {
 		Proxies map[string]struct {
@@ -378,6 +407,12 @@ func (r *Runner) Groups() ([]Group, error) {
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
 	return groups, nil
+}
+
+func (r *Runner) NodeNames() ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.store.NodeNames()
 }
 
 func (r *Runner) Select(group, option string) error {
