@@ -44,6 +44,7 @@ type Group struct {
 }
 
 type Runner struct {
+	operationMu     sync.Mutex
 	mu              sync.Mutex
 	store           *profile.Store
 	subs            *profile.Subscriptions
@@ -81,6 +82,8 @@ func (r *Runner) Snapshot() State {
 }
 
 func (r *Runner) Import(data string) (State, error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil {
@@ -96,6 +99,8 @@ func (r *Runner) Import(data string) (State, error) {
 }
 
 func (r *Runner) ImportSubscription(address string) (State, error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil {
@@ -110,6 +115,8 @@ func (r *Runner) ImportSubscription(address string) (State, error) {
 }
 
 func (r *Runner) UpdateSubscription() (State, error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil {
@@ -279,59 +286,65 @@ func (r *Runner) Stop() (State, error) {
 }
 
 func (r *Runner) SetSystemProxy(enabled bool) (State, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	if !enabled {
+		return r.Stop()
+	}
 	if r.systemProxy == nil {
-		return r.state, errors.New("当前平台不支持系统代理")
+		return r.Snapshot(), errors.New("当前平台不支持系统代理")
 	}
-	if enabled {
-		if r.cmd == nil || r.state.Status != "running" {
-			return r.state, errors.New("请先启动内核")
-		}
-		if r.state.SystemProxyEnabled {
-			return r.state, nil
-		}
-		if err := r.systemProxy.Enable(r.state.Port); err != nil {
-			return r.state, err
-		}
-		r.state.SystemProxyEnabled = true
-		r.proxyGeneration++
-		go r.monitorSystemProxy(r.proxyGeneration)
-	} else {
-		if err := r.systemProxy.Disable(); err != nil {
-			return r.state, err
-		}
-		r.state.SystemProxyEnabled = false
-		r.proxyGeneration++
+	if _, err := r.Start(); err != nil {
+		return r.Snapshot(), err
 	}
+	r.mu.Lock()
+	if r.state.SystemProxyEnabled {
+		state := r.state
+		r.mu.Unlock()
+		return state, nil
+	}
+	if err := r.systemProxy.Enable(r.state.Port); err != nil {
+		r.mu.Unlock()
+		state, stopErr := r.Stop()
+		return state, errors.Join(err, stopErr)
+	}
+	r.state.SystemProxyEnabled = true
+	r.proxyGeneration++
+	go r.monitorSystemProxy(r.proxyGeneration)
 	r.state.Error = ""
 	r.emit()
-	return r.state, nil
+	state := r.state
+	r.mu.Unlock()
+	return state, nil
 }
 
 func (r *Runner) monitorSystemProxy(generation uint64) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
+		r.operationMu.Lock()
 		r.mu.Lock()
 		if !r.state.SystemProxyEnabled || r.proxyGeneration != generation {
 			r.mu.Unlock()
+			r.operationMu.Unlock()
 			return
 		}
 		active, err := r.systemProxy.Active()
 		if err == nil && !active {
-			restoreErr := r.systemProxy.Disable()
-			r.state.SystemProxyEnabled = restoreErr != nil
-			r.proxyGeneration++
+			r.mu.Unlock()
+			_, stopErr := r.Stop()
+			r.mu.Lock()
 			r.state.Error = "系统代理已被其他应用改写"
-			if restoreErr != nil {
-				r.state.Error += fmt.Sprintf("；恢复失败: %v", restoreErr)
+			if stopErr != nil {
+				r.state.Error += fmt.Sprintf("；关闭失败: %v", stopErr)
 			}
 			r.emit()
 			r.mu.Unlock()
+			r.operationMu.Unlock()
 			return
 		}
 		r.mu.Unlock()
+		r.operationMu.Unlock()
 	}
 }
 
@@ -394,7 +407,11 @@ func (r *Runner) Select(group, option string) error {
 	return r.request(http.MethodPut, "/proxies/"+url.PathEscape(group), strings.NewReader(string(body)), nil)
 }
 
-func (r *Runner) Close() { _, _ = r.Stop() }
+func (r *Runner) Close() {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	_, _ = r.Stop()
+}
 
 func (r *Runner) fail(err error) (State, error) {
 	r.state.Status, r.state.Error = "failed", err.Error()

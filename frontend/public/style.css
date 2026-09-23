@@ -46,8 +46,14 @@ body {
 .status.starting, .status.stopping { background: #56502e; color: #eed988; }
 
 button, .file-button, select { font: inherit; }
-.primary { border: 0; border-radius: 11px; padding: 14px 23px; background: #5ddcc7; color: #102f32; white-space: nowrap; cursor: pointer; font-weight: 700; }
-.primary:disabled, .subscription-actions button:disabled { cursor: not-allowed; opacity: .45; }
+.system-switch { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #698995; border-radius: 12px; padding: 12px 15px; background: #263d4b; color: #d4e9ea; white-space: nowrap; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.system-switch.on { border-color: #5ddcc7; background: #174d45; color: #9af2da; }
+.system-switch:focus-visible { outline: 2px solid #9af2da; outline-offset: 3px; }
+.system-switch:disabled, .subscription-actions button:disabled { cursor: not-allowed; opacity: .45; }
+.switch-track { display: inline-flex; align-items: center; width: 34px; height: 20px; padding: 2px; border-radius: 20px; background: #607583; transition: background .2s; }
+.switch-knob { width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.system-switch.on .switch-track { background: #5ddcc7; }
+.system-switch.on .switch-knob { transform: translateX(14px); }
 .alert { margin-top: 18px; padding: 13px 16px; border: 1px solid #95515d; background: #4f2c37; border-radius: 10px; color: #ffced2; font-size: 13px; word-break: break-word; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
@@ -67,8 +73,6 @@ button, .file-button, select { font: inherit; }
 .subscription small { display: block; font-size: 10px; color: #85a0ae; }
 .subscription .http-note { margin-top: 8px; color: #e8b88e; }
 .endpoint { font-size: 24px; letter-spacing: .02em; margin: 14px 0 15px; color: #d5fcf5; }
-.proxy-button { margin-top: 18px; border: 1px solid #6fa3a3; background: transparent; color: #9de7dd; border-radius: 8px; padding: 9px 13px; cursor: pointer; font-size: 12px; }
-.proxy-button:disabled { cursor: not-allowed; opacity: .45; }
 .proxy-note { display: block; margin-top: 11px; color: #85a0ae; font-size: 10px; line-height: 1.5; }
 
 .groups { margin-top: 18px; min-height: 130px; }

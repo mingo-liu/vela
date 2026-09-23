@@ -26,7 +26,13 @@ func Run(assets fs.FS) error {
 	subs := profile.NewSubscriptions(store, macos.SubscriptionKeychain{})
 	binary := findBinary()
 	var wails *application.App
+	var systemProxyMenuItem *application.MenuItem
+	menuStateUpdates := make(chan struct{}, 1)
 	runner := mihomo.NewRunner(store, subs, dataDir, binary, 7890, macos.NewSystemProxy(dataDir), func(state mihomo.State) {
+		select {
+		case menuStateUpdates <- struct{}{}:
+		default:
+		}
 		if wails != nil {
 			wails.Event.Emit("runtime-state", state)
 		}
@@ -52,13 +58,19 @@ func Run(assets fs.FS) error {
 	tray.SetLabel("Vela")
 	menu := wails.NewMenu()
 	menu.Add("打开 Vela").OnClick(func(_ *application.Context) { window.Show(); window.Focus() })
-	menu.Add("启动本地代理").OnClick(func(_ *application.Context) { _, _ = runner.Start() })
-	menu.Add("停止本地代理").OnClick(func(_ *application.Context) { _, _ = runner.Stop() })
-	menu.Add("开启系统代理").OnClick(func(_ *application.Context) { _, _ = runner.SetSystemProxy(true) })
-	menu.Add("关闭系统代理").OnClick(func(_ *application.Context) { _, _ = runner.SetSystemProxy(false) })
+	systemProxyMenuItem = menu.AddCheckbox("系统代理", false)
+	systemProxyMenuItem.OnClick(func(_ *application.Context) {
+		state, _ := runner.SetSystemProxy(!runner.Snapshot().SystemProxyEnabled)
+		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
+	})
 	menu.AddSeparator()
 	menu.Add("退出 Vela").OnClick(func(_ *application.Context) { wails.Quit() })
 	tray.SetMenu(menu)
+	go func() {
+		for range menuStateUpdates {
+			systemProxyMenuItem.SetChecked(runner.Snapshot().SystemProxyEnabled)
+		}
+	}()
 	return wails.Run()
 }
 

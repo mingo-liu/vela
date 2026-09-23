@@ -33,11 +33,11 @@ rules:
 	systemProxy := &testSystemProxy{}
 	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, systemProxy, nil)
 	t.Cleanup(runner.Close)
-	state, err := runner.Start()
+	state, err := runner.SetSystemProxy(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != "running" {
+	if state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
 		t.Fatalf("unexpected state: %+v", state)
 	}
 	groups, err := runner.Groups()
@@ -47,32 +47,41 @@ rules:
 	if len(groups) == 0 {
 		t.Fatal("no selector groups from controller")
 	}
-	if state, err = runner.SetSystemProxy(true); err != nil || !state.SystemProxyEnabled || !systemProxy.enabled {
-		t.Fatalf("enable system proxy: %+v, %v", state, err)
-	}
 	if err := runner.Select("Choose", "REJECT"); err != nil {
 		t.Fatal(err)
 	}
 	systemProxy.failDisable = true
-	if state, err = runner.Stop(); err == nil || state.Status != "running" {
+	if state, err = runner.SetSystemProxy(false); err == nil || state.Status != "running" {
 		t.Fatalf("core stopped before system proxy could be restored: %+v, %v", state, err)
 	}
 	systemProxy.failDisable = false
-	state, err = runner.Stop()
+	state, err = runner.SetSystemProxy(false)
 	if err != nil || state.Status != "stopped" {
 		t.Fatalf("stop: %+v, %v", state, err)
 	}
 	if systemProxy.enabled {
 		t.Fatal("system proxy was not restored")
 	}
+	systemProxy.failEnable = true
+	state, err = runner.SetSystemProxy(true)
+	if err == nil || state.Status != "stopped" || state.SystemProxyEnabled {
+		t.Fatalf("core was not stopped after system proxy enable failed: %+v, %v", state, err)
+	}
 }
 
 type testSystemProxy struct {
 	enabled     bool
+	failEnable  bool
 	failDisable bool
 }
 
-func (p *testSystemProxy) Enable(int) error { p.enabled = true; return nil }
+func (p *testSystemProxy) Enable(int) error {
+	if p.failEnable {
+		return errors.New("enable failed")
+	}
+	p.enabled = true
+	return nil
+}
 func (p *testSystemProxy) Disable() error {
 	if p.failDisable {
 		return errors.New("restore failed")

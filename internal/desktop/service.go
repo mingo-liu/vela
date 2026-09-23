@@ -26,10 +26,6 @@ func (s *RuntimeService) UpdateSubscription() (mihomo.State, error) {
 	return s.runner.UpdateSubscription()
 }
 
-func (s *RuntimeService) Start() (mihomo.State, error) { return s.runner.Start() }
-
-func (s *RuntimeService) Stop() (mihomo.State, error) { return s.runner.Stop() }
-
 func (s *RuntimeService) SetSystemProxy(enabled bool) (mihomo.State, error) {
 	return s.runner.SetSystemProxy(enabled)
 }

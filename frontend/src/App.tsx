@@ -87,17 +87,20 @@ export default function App() {
   }
 
   const running = state.status === 'running'
+  const statusClass = state.systemProxyEnabled ? 'running' : running ? 'stopped' : state.status
   return <main className="shell">
     <header className="header"><div className="mark">V</div><div><h1>Vela</h1><p>macOS 本地代理</p></div></header>
     <section className="hero">
-      <div><span className={`status ${state.status}`}>{state.status === 'running' ? '内核运行中' : state.status === 'starting' ? '正在启动' : state.status === 'stopping' ? '正在停止' : state.status === 'failed' ? '启动失败' : '内核已停止'}</span>
-        <h2>让连接由你掌控</h2><p>导入 mihomo YAML 配置，启动本地 HTTP / SOCKS 代理。</p></div>
-      <button className="primary" disabled={busy || !state.hasProfile} onClick={() => void execute(running ? Runtime.Stop : Runtime.Start)}>{running ? '停止代理' : '启动代理'}</button>
+      <div><span className={`status ${statusClass}`}>{state.systemProxyEnabled ? '系统代理已开启' : state.status === 'starting' ? '正在启动' : state.status === 'stopping' ? '正在停止' : state.status === 'failed' ? '启动失败' : '系统代理已关闭'}</span>
+        <h2>让连接由你掌控</h2><p>打开系统代理时启动内核；关闭时恢复原设置并停止内核。</p></div>
+      <button className={`system-switch${state.systemProxyEnabled ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={state.systemProxyEnabled} disabled={busy || (!state.hasProfile && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}>
+        <span className="switch-track"><span className="switch-knob" /></span><span>{state.systemProxyEnabled ? '已开启' : '已关闭'}</span>
+      </button>
     </section>
     {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
     <div className="grid">
       <section className="card"><div className="card-head"><h3>配置或订阅</h3><span>{state.hasProfile ? '已导入' : '等待导入'}</span></div>
-        <p>支持内联节点和规则的单份 mihomo YAML。导入或更新前请先停止内核。</p>
+        <p>支持内联节点和规则的单份 mihomo YAML。关闭系统代理后可导入或更新配置。</p>
         <label className="file-button">选择 YAML 文件
           <input type="file" accept=".yaml,.yml,text/yaml" disabled={busy || running}
             onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} />
@@ -115,17 +118,16 @@ export default function App() {
       </section>
       <section className="card"><div className="card-head"><h3>系统代理</h3><span>{state.systemProxyEnabled ? '已接管' : '未接管'}</span></div>
         <div className="endpoint">127.0.0.1:{state.port}</div>
-        <p>启动内核后可接管当前网络服务的 HTTP、HTTPS 和 SOCKS 代理。关闭时恢复启用前的设置。</p>
-        <button className="proxy-button" disabled={busy || (!running && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}>{state.systemProxyEnabled ? '关闭系统代理' : '开启系统代理'}</button>
+        <p>开启后，当前网络服务的 HTTP、HTTPS 和 SOCKS 代理会指向此端口；关闭时恢复启用前的设置。</p>
         <small className="proxy-note">其他代理应用也可能修改系统代理设置。</small>
       </section>
     </div>
     <section className="card groups"><div className="card-head"><h3>策略组</h3><span>{groups.length} 个可选择</span></div>
-      {!running && <p>启动内核后可以选择策略组节点。</p>}
+      {!running && <p>开启系统代理后可以选择策略组节点。</p>}
       {running && groups.length === 0 && <p>当前配置没有手动选择的策略组。</p>}
       {groups.map(group => <div className="group" key={group.name}><div><strong>{group.name}</strong><small>当前：{group.current}</small></div>
         <select aria-label={`选择 ${group.name} 节点`} value={group.current} disabled={busy} onChange={e => void select(group.name, e.target.value)}>{(group.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}</select></div>)}
     </section>
-    <footer>关闭窗口后 Vela 留在菜单栏；选择“退出 Vela”会停止内核。</footer>
+    <footer>关闭窗口后 Vela 留在菜单栏；选择“退出 Vela”会恢复系统代理并停止内核。</footer>
   </main>
 }
