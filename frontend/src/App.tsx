@@ -167,7 +167,7 @@ export default function App() {
 
     <main className="content">
       {page === 'home' && <>
-        <div className="page-heading"><div><span className="eyebrow">OVERVIEW</span><h1>Home</h1></div></div>
+        <div className="page-heading"><h1>Home</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <section className="panel connection-panel" aria-labelledby="connection-title">
           <div className="panel-top"><div className="panel-icon"><PlugsConnected size={27} /></div>{statusText && <span className={`state-pill${connected ? ' connected' : ''}`}>{statusText}</span>}</div>
@@ -182,7 +182,7 @@ export default function App() {
       </>}
 
       {page === 'proxies' && <>
-        <div className="page-heading"><div><span className="eyebrow">CONNECTIONS</span><h1>Proxies</h1></div></div>
+        <div className="page-heading"><h1>Proxies</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <section className="panel page-panel proxies-panel"><div className="panel-heading"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h2>策略组</h2></div></div>
           {!state.hasProfile && <div className="empty-state"><GlobeHemisphereWest size={42} weight="light" /><h3>尚无配置</h3><p>前往 Profiles 导入订阅或本地配置。</p><button className="secondary-button" type="button" onClick={() => setPage('profiles')}>前往 Profiles <ArrowRight size={16} /></button></div>}
@@ -203,11 +203,10 @@ export default function App() {
       </>}
 
       {page === 'profiles' && <>
-        <div className="page-heading"><div><span className="eyebrow">CONFIGURATION</span><h1>Profiles</h1></div><span className={`heading-badge${state.hasProfile ? ' ready' : ''}`}>{state.hasProfile ? '配置已就绪' : '等待导入'}</span></div>
+        <div className="page-heading"><h1>Profiles</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <div className="profile-stack">
           <section className="subscription-section" aria-label="已保存的订阅">
-            <div className="subscription-section-heading"><h2>已保存的订阅</h2><span>{subscriptions.length} 个订阅</span></div>
             {subscriptions.length === 0 && <div className="panel subscription-empty">还没有订阅。请在下方粘贴订阅地址导入。</div>}
             <div className="subscription-grid">
               {subscriptions.map(subscription => {
