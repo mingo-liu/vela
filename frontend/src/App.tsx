@@ -253,7 +253,7 @@ export default function App() {
             return <section className="proxy-group" key={group.name} aria-label={`${group.name} 策略组`}>
               <div className="proxy-group-header">
                 <button className="proxy-group-toggle" type="button" aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}>
-                  <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">Selector</span><span>{running ? '当前节点' : '预选节点'}：{group.current || '未选择'}</span></small></span>
+                  <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">Selector</span><span>{group.current || '未选择'}</span></small></span>
                 </button>
                 <div className="proxy-group-actions">
                   <button className={`proxy-group-action signal${testingGroup === group.name ? ' testing' : ''}`} type="button" aria-label={`测试 ${group.name} 的节点延迟`} title="测延迟" disabled={busy || testingGroup !== null} onClick={() => void testGroupDelay(group.name)}><WifiMedium size={30} weight="bold" aria-hidden="true" /></button>
