@@ -23,7 +23,7 @@ const navigation = [
   { id: 'settings', label: 'Settings', icon: GearSix },
 ] as const
 
-const defaultSettings: Settings = { routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', logLevel: 'profile', launchAtLogin: false }
+const defaultSettings: Settings = { mixedPort: 7890, routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', logLevel: 'profile', launchAtLogin: false }
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -82,10 +82,13 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [coreInfo, setCoreInfo] = useState<CoreInfo | null>(null)
   const [coreInfoError, setCoreInfoError] = useState('')
+  const [portDraft, setPortDraft] = useState('7890')
   const [profileRevision, setProfileRevision] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => Events.On('open-settings', () => setPage('settings')), [])
+
+  useEffect(() => setPortDraft(String(state.port)), [state.port])
 
   useEffect(() => {
     let active = true
@@ -183,6 +186,15 @@ export default function App() {
   const openConfigDirectory = async () => {
     setNotice('')
     try { await Runtime.OpenConfigDirectory() } catch (error) { setNotice(message(error)) }
+  }
+
+  const saveMixedPort = async () => {
+    const port = Number(portDraft)
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      setNotice('本地代理端口必须在 1024–65535 之间')
+      return
+    }
+    if (await execute(() => Runtime.SetMixedPort(port))) setPortDraft(String(port))
   }
 
   const select = async (group: string, option: string) => {
@@ -364,6 +376,7 @@ export default function App() {
           <section className="panel settings-card" aria-labelledby="proxy-settings-title">
             <h2 id="proxy-settings-title">代理</h2>
             <fieldset className="settings-routing" disabled={busy}><legend>代理模式</legend><div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}><input type="radio" name="settings-routing-mode" value={option.value} checked={state.routingMode === option.value} onChange={() => void execute(() => Runtime.SetRoutingMode(option.value))} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</div></fieldset>
+            <div className="setting-row"><label htmlFor="mixed-port"><strong>本地代理端口</strong><small>{connected ? '保存后将按当前网络设置重新连接' : '仅监听 127.0.0.1'}</small></label><div className="port-editor"><input id="mixed-port" type="number" min="1024" max="65535" step="1" inputMode="numeric" value={portDraft} disabled={busy} onChange={event => setPortDraft(event.target.value)} /><button className="secondary-button" type="button" disabled={busy || portDraft === String(state.port)} onClick={() => void saveMixedPort()}>保存</button></div></div>
           </section>
           <section className="panel settings-card" aria-labelledby="core-settings-title">
             <h2 id="core-settings-title">内核</h2>
@@ -371,7 +384,6 @@ export default function App() {
           </section>
           <section className="panel settings-card" aria-labelledby="info-settings-title">
             <h2 id="info-settings-title">信息</h2>
-            <div className="setting-row"><span><strong>本地代理</strong><small>仅监听本机</small></span><code>127.0.0.1:{state.port}</code></div>
             <div className="setting-row"><span><strong>内核信息</strong></span><span className="setting-value" title={coreInfoError || undefined}>{coreInfo ? `${coreInfo.name} ${coreInfo.version}` : coreInfoError ? '无法读取' : '读取中…'}</span></div>
             <div className="setting-row"><span><strong>配置目录</strong></span><button className="secondary-button" type="button" onClick={() => void openConfigDirectory()}>打开目录 <FolderOpen size={16} /></button></div>
           </section>

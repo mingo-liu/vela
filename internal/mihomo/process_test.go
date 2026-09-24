@@ -3,6 +3,7 @@ package mihomo
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,91 @@ func TestParseCoreInfo(t *testing.T) {
 	}
 	if _, err := parseCoreInfo("unknown output"); err == nil {
 		t.Fatal("accepted version output without a version")
+	}
+}
+
+func TestSetMixedPortOfflineAndOccupied(t *testing.T) {
+	store := profile.NewStore(t.TempDir())
+	runner := NewRunner(store, nil, "", "", profile.DefaultMixedPort, nil, nil)
+	for _, port := range []int{0, 1023, 65536} {
+		if _, err := runner.SetMixedPort(port); err == nil {
+			t.Fatalf("invalid port %d accepted", port)
+		}
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	occupied := listener.Addr().(*net.TCPAddr).Port
+	if _, err := runner.SetMixedPort(occupied); err == nil {
+		t.Fatal("occupied port accepted")
+	}
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := runner.SetMixedPort(port)
+	if err != nil || state.Port != port {
+		t.Fatalf("offline port update = %+v, %v", state, err)
+	}
+	settings, err := store.Settings()
+	if err != nil || settings.MixedPort != port {
+		t.Fatalf("saved port = %+v, %v", settings, err)
+	}
+}
+
+func TestSetMixedPortReconnectsAndRollsBackWithRealCore(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to run the real core integration test")
+	}
+	initialPort, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if _, err := store.UpdateSettings(func(settings *profile.Settings) error {
+		settings.MixedPort = initialPort
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Import("proxies: []\nrules:\n  - MATCH,DIRECT\n"); err != nil {
+		t.Fatal(err)
+	}
+	proxy := &testSystemProxy{}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, initialPort, proxy, nil)
+	t.Cleanup(runner.Close)
+	if _, err := runner.SetSystemProxy(true); err != nil {
+		t.Fatal(err)
+	}
+	newPort, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy.failDisable = true
+	if state, err := runner.SetMixedPort(newPort); err == nil || state.Port != initialPort || !state.SystemProxyEnabled {
+		t.Fatalf("failed to stop old connection safely = %+v, %v", state, err)
+	}
+	proxy.failDisable = false
+	state, err := runner.SetMixedPort(newPort)
+	if err != nil || state.Port != newPort || !state.SystemProxyEnabled || proxy.port != newPort {
+		t.Fatalf("reconnected with new port = %+v, proxy port %d, %v", state, proxy.port, err)
+	}
+	failingPort, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy.failPort = failingPort
+	state, err = runner.SetMixedPort(failingPort)
+	if err == nil || state.Port != newPort || !state.SystemProxyEnabled || proxy.port != newPort {
+		t.Fatalf("failed change did not restore connection = %+v, proxy port %d, %v", state, proxy.port, err)
+	}
+	settings, err := store.Settings()
+	if err != nil || settings.MixedPort != newPort {
+		t.Fatalf("failed change did not restore saved port = %+v, %v", settings, err)
 	}
 }
 
@@ -497,15 +583,18 @@ func TestGroupDelayTestsEachOption(t *testing.T) {
 
 type testSystemProxy struct {
 	enabled     bool
+	port        int
+	failPort    int
 	failEnable  bool
 	failDisable bool
 }
 
-func (p *testSystemProxy) Enable(int) error {
-	if p.failEnable {
+func (p *testSystemProxy) Enable(port int) error {
+	if p.failEnable || port == p.failPort {
 		return errors.New("enable failed")
 	}
 	p.enabled = true
+	p.port = port
 	return nil
 }
 func (p *testSystemProxy) Disable() error {
@@ -513,6 +602,7 @@ func (p *testSystemProxy) Disable() error {
 		return errors.New("restore failed")
 	}
 	p.enabled = false
+	p.port = 0
 	return nil
 }
 func (p *testSystemProxy) Recover() error        { return p.Disable() }

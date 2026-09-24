@@ -9,13 +9,15 @@ import (
 )
 
 const (
-	RoutingRule    = "rule"
-	RoutingGlobal  = "global"
-	RoutingDirect  = "direct"
-	LogFromProfile = "profile"
+	RoutingRule      = "rule"
+	RoutingGlobal    = "global"
+	RoutingDirect    = "direct"
+	LogFromProfile   = "profile"
+	DefaultMixedPort = 7890
 )
 
 type Settings struct {
+	MixedPort       int    `json:"mixedPort"`
 	RoutingMode     string `json:"routingMode"`
 	AutoConnect     bool   `json:"autoConnect"`
 	AutoConnectMode string `json:"autoConnectMode"`
@@ -24,8 +26,10 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{RoutingMode: RoutingRule, AutoConnectMode: "system", LogLevel: LogFromProfile}
+	return Settings{MixedPort: DefaultMixedPort, RoutingMode: RoutingRule, AutoConnectMode: "system", LogLevel: LogFromProfile}
 }
+
+func ValidMixedPort(port int) bool { return port >= 1024 && port <= 65535 }
 
 func ValidRoutingMode(mode string) bool {
 	return mode == RoutingRule || mode == RoutingGlobal || mode == RoutingDirect
@@ -40,7 +44,7 @@ func ValidLogLevel(level string) bool {
 }
 
 func validSettings(settings Settings) bool {
-	return ValidRoutingMode(settings.RoutingMode) &&
+	return ValidMixedPort(settings.MixedPort) && ValidRoutingMode(settings.RoutingMode) &&
 		(settings.AutoConnectMode == "system" || settings.AutoConnectMode == "tun") &&
 		ValidLogLevel(settings.LogLevel)
 }

@@ -32,13 +32,14 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, err := store.Settings()
-	if err != nil || settings.RoutingMode != RoutingGlobal || settings.AutoConnect || settings.AutoConnectMode != "system" || settings.LogLevel != LogFromProfile {
+	if err != nil || settings.MixedPort != DefaultMixedPort || settings.RoutingMode != RoutingGlobal || settings.AutoConnect || settings.AutoConnectMode != "system" || settings.LogLevel != LogFromProfile {
 		t.Fatalf("legacy settings = %+v, %v", settings, err)
 	}
 	settings, err = store.UpdateSettings(func(value *Settings) error {
 		value.AutoConnect = true
 		value.AutoConnectMode = "tun"
 		value.LogLevel = "debug"
+		value.MixedPort = 8900
 		return nil
 	})
 	if err != nil || !settings.AutoConnect {
@@ -48,7 +49,7 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, err = NewStore(dir).Settings()
-	if err != nil || settings.RoutingMode != RoutingDirect || !settings.AutoConnect || settings.AutoConnectMode != "tun" || settings.LogLevel != "debug" {
+	if err != nil || settings.MixedPort != 8900 || settings.RoutingMode != RoutingDirect || !settings.AutoConnect || settings.AutoConnectMode != "tun" || settings.LogLevel != "debug" {
 		t.Fatalf("reloaded settings = %+v, %v", settings, err)
 	}
 	if _, err := store.UpdateSettings(func(value *Settings) error { value.LogLevel = "verbose"; return nil }); err == nil {
@@ -57,5 +58,10 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 	settings, err = store.Settings()
 	if err != nil || settings.LogLevel != "debug" {
 		t.Fatalf("invalid update changed settings = %+v, %v", settings, err)
+	}
+	for _, port := range []int{0, 1023, 65536} {
+		if _, err := store.UpdateSettings(func(value *Settings) error { value.MixedPort = port; return nil }); err == nil {
+			t.Fatalf("invalid port %d accepted", port)
+		}
 	}
 }

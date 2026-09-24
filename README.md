@@ -2,7 +2,7 @@
 
 Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当前 MVP 支持导入单份 mihomo YAML 或 HTTP/HTTPS 订阅地址、手动更新订阅、选择手动策略组中的节点，以及系统代理和 Tun 两种网络设置。代理模式可选 Rule、Global 或 Direct。关闭窗口后应用留在菜单栏，明确退出时停止内核。
 
-本地 mixed 端口固定为 `127.0.0.1:7890`。打开系统代理时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量。
+本地 mixed 端口默认是 `127.0.0.1:7890`，可在 Settings 中修改为 1024–65535 范围内的端口。运行中修改会重建当前连接，失败时尝试恢复原端口和连接。打开系统代理时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量。
 
 Tun 模式首次使用或 Tun 服务 / mihomo 更新后会请求一次 macOS 管理员授权。Vela 将独立 Tun 服务和受信任的 mihomo 内核安装到 `/Library/PrivilegedHelperTools/local.vela.desktop.tun/`，由 launchd 管理服务；只更新 Vela 界面无需重新授权。后续开关 Tun 通过仅限授权用户访问的本地套接字与服务通信，不再弹出密码框。服务使用 mihomo 的 `auto-route` 接管设备流量，并启用内部 DNS 与 DNS 劫持。系统代理与 Tun 互斥；切换失败时 Vela 会尝试恢复原模式。关闭 Tun 或退出应用时会停止内核；GUI 异常退出后，服务会检测客户端断开并停止内核。macOS 对发往局域网 DNS 的请求有劫持限制。多配置和 provider 缓存仍在后续阶段。
 

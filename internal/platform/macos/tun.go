@@ -170,7 +170,7 @@ func validateTunConfig(uid int, dataDir, configPath, stopPath string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return validateManagedTunConfigWithLogLevel(data, raw, settings.RoutingMode, settings.LogLevel)
+	return validateManagedTunConfigWithSettings(data, raw, settings.RoutingMode, settings.LogLevel, settings.MixedPort)
 }
 
 func validateManagedTunConfig(data, raw []byte, routingMode string) ([]byte, error) {
@@ -178,6 +178,10 @@ func validateManagedTunConfig(data, raw []byte, routingMode string) ([]byte, err
 }
 
 func validateManagedTunConfigWithLogLevel(data, raw []byte, routingMode, logLevel string) ([]byte, error) {
+	return validateManagedTunConfigWithSettings(data, raw, routingMode, logLevel, profile.DefaultMixedPort)
+}
+
+func validateManagedTunConfigWithSettings(data, raw []byte, routingMode, logLevel string, mixedPort int) ([]byte, error) {
 	var settings struct {
 		MixedPort  int    `yaml:"mixed-port"`
 		Controller string `yaml:"external-controller"`
@@ -187,7 +191,7 @@ func validateManagedTunConfigWithLogLevel(data, raw []byte, routingMode, logLeve
 		return nil, err
 	}
 	host, portText, err := net.SplitHostPort(settings.Controller)
-	if err != nil || host != "127.0.0.1" || settings.MixedPort != 7890 {
+	if err != nil || host != "127.0.0.1" || settings.MixedPort != mixedPort || !profile.ValidMixedPort(mixedPort) {
 		return nil, errors.New("Tun helper 控制地址无效")
 	}
 	apiPort, err := strconv.Atoi(portText)
@@ -197,7 +201,7 @@ func validateManagedTunConfigWithLogLevel(data, raw []byte, routingMode, logLeve
 	if _, err := hex.DecodeString(settings.Secret); err != nil {
 		return nil, errors.New("Tun helper 控制密钥无效")
 	}
-	expected, err := profile.CompileWithLogLevel(raw, 7890, apiPort, settings.Secret, true, routingMode, logLevel)
+	expected, err := profile.CompileWithLogLevel(raw, mixedPort, apiPort, settings.Secret, true, routingMode, logLevel)
 	if err != nil {
 		return nil, err
 	}

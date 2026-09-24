@@ -325,6 +325,9 @@ func (r *Runner) start(tun bool) (State, error) {
 		if err != nil {
 			return r.fail(err)
 		}
+		if port == r.state.Port {
+			continue
+		}
 		r.apiPort = port
 		compiled, err := r.compile(raw, port, tun)
 		if err != nil {
@@ -569,6 +572,107 @@ func (r *Runner) SetLogLevel(level string) (profile.Settings, error) {
 		settings.LogLevel = level
 		return nil
 	})
+}
+
+// SetMixedPort restarts an active connection so the listener and system proxy
+// always use the same port. A failed restart restores the saved port and mode.
+func (r *Runner) SetMixedPort(port int) (State, error) {
+	if !profile.ValidMixedPort(port) {
+		return r.Snapshot(), errors.New("本地代理端口必须在 1024–65535 之间")
+	}
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	if r.cmd != nil && r.state.Status != "running" {
+		state := r.state
+		r.mu.Unlock()
+		return state, errors.New("内核正在切换状态，请稍后重试")
+	}
+	previousPort := r.state.Port
+	previousMode := "off"
+	if r.state.SystemProxyEnabled {
+		previousMode = "system"
+	} else if r.state.TunEnabled {
+		previousMode = "tun"
+	}
+	wasRunning := r.cmd != nil
+	needsRestart := wasRunning || previousMode != "off"
+	r.mu.Unlock()
+	if port == previousPort {
+		return r.Snapshot(), nil
+	}
+	if err := checkMixedPortAvailable(port); err != nil {
+		return r.Snapshot(), err
+	}
+	before, err := r.store.Settings()
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	restart := func() (State, error) {
+		if previousMode != "off" {
+			return r.activate(previousMode)
+		}
+		if wasRunning {
+			return r.Start()
+		}
+		return r.Snapshot(), nil
+	}
+	if needsRestart {
+		if _, err := r.Stop(); err != nil {
+			return r.Snapshot(), err
+		}
+	}
+	if _, err := r.store.UpdateSettings(func(settings *profile.Settings) error {
+		settings.MixedPort = port
+		return nil
+	}); err != nil {
+		_, restoreErr := restart()
+		return r.Snapshot(), errors.Join(err, restoreErr)
+	}
+	r.setMixedPortState(port)
+	if !needsRestart {
+		return r.Snapshot(), nil
+	}
+	if _, err := restart(); err != nil {
+		if _, stopErr := r.Stop(); stopErr != nil {
+			return r.Snapshot(), errors.Join(err, fmt.Errorf("停止新端口连接失败: %w", stopErr))
+		}
+		if _, saveErr := r.store.UpdateSettings(func(settings *profile.Settings) error {
+			settings.MixedPort = before.MixedPort
+			return nil
+		}); saveErr != nil {
+			return r.Snapshot(), errors.Join(err, fmt.Errorf("恢复原端口设置失败: %w", saveErr))
+		}
+		r.setMixedPortState(previousPort)
+		_, restoreErr := restart()
+		return r.Snapshot(), errors.Join(fmt.Errorf("切换本地代理端口失败: %w", err), restoreErr)
+	}
+	return r.Snapshot(), nil
+}
+
+func (r *Runner) setMixedPortState(port int) {
+	r.mu.Lock()
+	r.state.Port = port
+	r.state.Error = ""
+	if r.cmd == nil {
+		r.state.Status = "stopped"
+	}
+	r.emit()
+	r.mu.Unlock()
+}
+
+func checkMixedPortAvailable(port int) error {
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	tcp, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("本地代理端口 %d 不可用: %w", port, err)
+	}
+	defer tcp.Close()
+	udp, err := net.ListenPacket("udp", address)
+	if err != nil {
+		return fmt.Errorf("本地代理端口 %d 不可用: %w", port, err)
+	}
+	return udp.Close()
 }
 
 // patchRoutingMode changes only routing. Connection mode and managed listeners stay active.

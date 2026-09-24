@@ -60,6 +60,10 @@ func (s *RuntimeService) SetRoutingMode(mode string) (mihomo.State, error) {
 	return s.runner.SetRoutingMode(mode)
 }
 
+func (s *RuntimeService) SetMixedPort(port int) (mihomo.State, error) {
+	return s.runner.SetMixedPort(port)
+}
+
 func (s *RuntimeService) Settings() (profile.Settings, error) {
 	settings, err := s.store.Settings()
 	if err != nil {

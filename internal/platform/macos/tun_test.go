@@ -65,6 +65,16 @@ func TestTunHelperAcceptsOnlyManagedConfig(t *testing.T) {
 	if _, err := validateManagedTunConfig(debugConfig, raw, profile.RoutingRule); err == nil {
 		t.Fatal("unexpected log level accepted")
 	}
+	customPortConfig, err := profile.CompileForMode(raw, 8900, 19090, secret, true, profile.RoutingRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateManagedTunConfigWithSettings(customPortConfig, raw, profile.RoutingRule, profile.LogFromProfile, 8900); err != nil {
+		t.Fatalf("managed custom port rejected: %v", err)
+	}
+	if _, err := validateManagedTunConfig(customPortConfig, raw, profile.RoutingRule); err == nil {
+		t.Fatal("unexpected custom port accepted")
+	}
 	compiled, err := profile.CompileForMode(raw, 7890, 19090, secret, true, profile.RoutingRule)
 	if err != nil {
 		t.Fatal(err)

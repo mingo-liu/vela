@@ -24,13 +24,17 @@ func Run(assets fs.FS) error {
 		return err
 	}
 	store := profile.NewStore(dataDir)
+	initialPort := profile.DefaultMixedPort
+	if settings, err := store.Settings(); err == nil {
+		initialPort = settings.MixedPort
+	}
 	subs := profile.NewSubscriptions(store, profile.NewFileURLStore(dataDir, macos.SubscriptionKeychain{}))
 	binary := findBinary()
 	var wails *application.App
 	var systemProxyMenuItem *application.MenuItem
 	var tunMenuItem *application.MenuItem
 	menuStateUpdates := make(chan struct{}, 1)
-	runner := mihomo.NewRunner(store, subs, dataDir, binary, 7890, macos.NewSystemProxy(dataDir), func(state mihomo.State) {
+	runner := mihomo.NewRunner(store, subs, dataDir, binary, initialPort, macos.NewSystemProxy(dataDir), func(state mihomo.State) {
 		select {
 		case menuStateUpdates <- struct{}{}:
 		default:
