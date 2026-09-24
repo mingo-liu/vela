@@ -191,25 +191,22 @@ tasks:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
   generate:icons:
-    summary: Generates Windows `.ico` and Mac `.icns` from an image; on macOS, `-iconcomposerinput appicon.icon -macassetdir darwin` also produces `Assets.car` from a `.icon` file (skipped on other platforms).
+    summary: Generates Windows `.ico` and Mac `.icns` directly from the transparent app icon.
     run: once
     dir: build
     sources:
       - "appicon.png"
-      - "appicon.icon"
+      - "Taskfile.yml"
     generates:
       - "darwin/icons.icns"
       - "windows/icon.ico"
     cmds:
       - cmd: |
-          # Wails falls back to .icns when actool is unavailable, but leaves an old Assets.car behind.
+          # A stale Icon Composer asset takes precedence over icons.icns in macOS.
           rm -f darwin/Assets.car
-          if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app/Contents/Developer ]; then
-            export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-          fi
-          wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+          wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
         platforms: [darwin]
-      - cmd: wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+      - cmd: wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
         platforms: [linux, windows]
 
   prepare:mihomo:

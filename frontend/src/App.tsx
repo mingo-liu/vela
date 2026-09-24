@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, FolderOpen, GearSix, GlobeHemisphereWest, House, LinkSimple, ListBullets, Stack, WifiMedium } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
-import velaIcon from '../../build/appicon.icon/Assets/vela_icon.svg'
+import velaIcon from '../../build/appicon.png'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { CoreInfo, Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
