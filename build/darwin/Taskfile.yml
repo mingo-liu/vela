@@ -184,7 +184,7 @@ tasks:
     vars:
       DMG_BACKGROUND: '{{.DMG_BACKGROUND | default "build/darwin/dmg-background.png"}}'
       DMG_VOLUME_ICON: '{{.DMG_VOLUME_ICON | default "build/darwin/icons.icns"}}'
-      DMG_FILE_ICON: '{{.DMG_FILE_ICON | default "build/darwin/dmg-file-icon.icns"}}'
+      DMG_FILE_ICON: '{{.DMG_FILE_ICON | default "build/darwin/icons.icns"}}'
       DMG_WINDOW_WIDTH: '{{.DMG_WINDOW_WIDTH | default "540"}}'
       DMG_WINDOW_HEIGHT: '{{.DMG_WINDOW_HEIGHT | default "380"}}'
       DMG_FILES: '{{.DMG_FILES | default ""}}'
@@ -199,6 +199,11 @@ tasks:
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo"
       - cp build/resources/vela-tun-service "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service"
       - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Country.mmdb"
+      - rm -rf "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses"
+      - cp LICENSE "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses/Vela-MIT.txt"
+      - cp build/darwin/GPL-3.0.txt "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses/GPL-3.0.txt"
+      - cp "frontend/Inter Font License.txt" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses/Inter-OFL-1.1.txt"
       - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
@@ -239,10 +244,12 @@ tasks:
     desc: |
       Signs the .app bundle for distribution.
       Uses signing identity from `wails3 setup` (stored in ~/.config/wails/defaults.yaml).
-      Override with: task darwin:sign -- --identity "Developer ID Application: ..."
+      Configure the signing identity with `wails3 setup` before running this task.
     deps:
       - task: package
     cmds:
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo" --hardened-runtime {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service" --hardened-runtime {{.CLI_ARGS}}
       - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app" {{.CLI_ARGS}}
 
   sign:notarize:
@@ -256,4 +263,6 @@ tasks:
     deps:
       - task: package
     cmds:
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo" --hardened-runtime {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service" --hardened-runtime {{.CLI_ARGS}}
       - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app" --notarize {{.CLI_ARGS}}

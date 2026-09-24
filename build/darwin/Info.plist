@@ -12,7 +12,7 @@
         <key>CFBundleVersion</key>
             <string>0.1.0</string>
         <key>CFBundleGetInfoString</key>
-            <string>Development example</string>
+            <string>Vela macOS proxy client</string>
         <key>CFBundleShortVersionString</key>
             <string>0.1.0</string>
         <key>CFBundleIconFile</key>
@@ -22,6 +22,6 @@
         <key>NSHighResolutionCapable</key>
             <string>true</string>
         <key>NSHumanReadableCopyright</key>
-            <string></string>
+            <string>Copyright © 2026 Zhengming Liu</string>
     </dict>
 </plist>
