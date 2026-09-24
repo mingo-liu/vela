@@ -166,8 +166,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .setting-row select { max-width: 45%; min-width: 132px; padding: 9px 11px; border: 1px solid #dfe1e5; border-radius: 9px; background: #fafbfc; color: #24272d; font-size: 12px; }
 .setting-row code, .setting-value { color: #44474d; font-size: 12px; white-space: nowrap; }
 .setting-row label { display: grid; gap: 5px; }
-.port-editor { display: flex; align-items: center; gap: 8px; }
-.port-editor input { width: 96px; padding: 9px 10px; border: 1px solid #dfe1e5; border-radius: 9px; background: #fafbfc; color: #24272d; font-size: 12px; }
+.port-setting { flex-wrap: wrap; }
+.port-editor { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.port-field { display: flex; align-items: center; min-height: 36px; border: 1px solid #dfe1e5; border-radius: 9px; background: #fafbfc; }
+.port-field:focus-within { outline: 3px solid #ff4965; outline-offset: 3px; }
+.port-address { padding-left: 12px; color: #24272d; font-size: 12px; white-space: nowrap; }
+.port-field input { width: 85px; min-width: 0; padding: 9px 10px 9px 4px; border: 0; outline: 0; background: transparent; color: #24272d; font-size: 12px; }
+.port-field input:focus-visible { outline: 0; }
 .port-editor .secondary-button { min-height: 36px; }
 .settings-routing { min-width: 0; margin: 0; padding: 14px 0 0; border: 0; border-top: 1px solid #eceef1; }
 .settings-routing + .setting-row { border-top: 0; }
