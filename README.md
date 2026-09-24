@@ -4,9 +4,9 @@ Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当
 
 本地 mixed 端口固定为 `127.0.0.1:7890`。打开系统代理时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量。
 
-Tun 模式首次使用或 Vela / mihomo 更新后会请求一次 macOS 管理员授权，将辅助程序安装到 `/Library/PrivilegedHelperTools/local.vela.desktop.tun/`。后续开关 Tun 不再弹出密码框。辅助程序使用 mihomo 的 `auto-route` 接管设备流量，并启用内部 DNS 与 DNS 劫持。系统代理与 Tun 互斥；切换失败时 Vela 会尝试恢复原模式。关闭 Tun 或退出应用时会停止内核；GUI 异常退出后，辅助程序会检测并停止内核。macOS 对发往局域网 DNS 的请求有劫持限制。多配置和 provider 缓存仍在后续阶段。
+Tun 模式首次使用或 Tun 服务 / mihomo 更新后会请求一次 macOS 管理员授权。Vela 将独立 Tun 服务和受信任的 mihomo 内核安装到 `/Library/PrivilegedHelperTools/local.vela.desktop.tun/`，由 launchd 管理服务；只更新 Vela 界面无需重新授权。后续开关 Tun 通过仅限授权用户访问的本地套接字与服务通信，不再弹出密码框。服务使用 mihomo 的 `auto-route` 接管设备流量，并启用内部 DNS 与 DNS 劫持。系统代理与 Tun 互斥；切换失败时 Vela 会尝试恢复原模式。关闭 Tun 或退出应用时会停止内核；GUI 异常退出后，服务会检测客户端断开并停止内核。macOS 对发往局域网 DNS 的请求有劫持限制。多配置和 provider 缓存仍在后续阶段。
 
-如需移除已授权的 Tun 辅助程序，先退出 Vela，再运行 `bin/vela --vela-tun-uninstall`（已打包应用可使用 `.app/Contents/MacOS/vela`）。
+如需移除已授权的 Tun 服务，先退出 Vela，再运行 `bin/vela --vela-tun-uninstall`（已打包应用可使用 `.app/Contents/MacOS/vela`）。
 
 窗口左侧的 Home 显示连接状态和两种模式的开关，Proxies 用于选择策略组节点、测量节点延迟并按名称或延迟排序，Profiles 用于导入 YAML 或管理订阅。未连接时测速会临时启动内核，完成后关闭，不改变连接模式。
 

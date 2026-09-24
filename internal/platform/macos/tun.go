@@ -17,16 +17,16 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/mingo-liu/vela/internal/profile"
 	"go.yaml.in/yaml/v3"
 )
 
 const tunInstallDir = "/Library/PrivilegedHelperTools/local.vela.desktop.tun"
+const tunServiceID = "local.vela.desktop.tun"
+const tunServicePlist = "/Library/LaunchDaemons/" + tunServiceID + ".plist"
 
-// NewTunLauncher installs a root-owned helper on first use or after an update.
-// Later TUN starts execute that helper directly, without another password prompt.
+// NewTunLauncher installs the standalone service and approved core when they change.
 func NewTunLauncher(binary, dataDir string) func(configPath, stopPath string) (*exec.Cmd, error) {
 	return func(configPath, stopPath string) (*exec.Cmd, error) {
 		self, err := os.Executable()
@@ -37,17 +37,26 @@ func NewTunLauncher(binary, dataDir string) func(configPath, stopPath string) (*
 		if err != nil {
 			return nil, err
 		}
-		if err := ensureTunHelper(self, absBinary); err != nil {
+		service := filepath.Join(filepath.Dir(self), "..", "Resources", "vela-tun-service")
+		if _, err := os.Stat(service); errors.Is(err, os.ErrNotExist) {
+			service = filepath.Join("build", "resources", "vela-tun-service")
+		}
+		service, err = filepath.Abs(service)
+		if err != nil {
 			return nil, err
 		}
-		return exec.Command(filepath.Join(tunInstallDir, "helper"), "--vela-tun-helper", dataDir, configPath, stopPath, strconv.Itoa(os.Getpid())), nil
+		if err := ensureTunService(service, absBinary); err != nil {
+			return nil, err
+		}
+		return exec.Command(self, "--vela-tun-client", dataDir, configPath, stopPath), nil
 	}
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
-func UninstallTunHelper() error {
-	script := "do shell script " + strconv.Quote("/bin/rm -rf "+shellQuote(tunInstallDir)) + " with administrator privileges with prompt \"移除 Vela Tun 辅助程序\""
+func UninstallTunService() error {
+	command := "/bin/launchctl bootout system/" + tunServiceID + " 2>/dev/null || true; /bin/rm -f " + shellQuote(tunServicePlist) + "; /bin/rm -rf " + shellQuote(tunInstallDir)
+	script := "do shell script " + strconv.Quote(command) + " with administrator privileges with prompt \"移除 Vela Tun 服务\""
 	output, err := exec.Command("/usr/bin/osascript", "-e", script).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("移除 Tun 辅助程序失败: %w；%s", err, strings.TrimSpace(string(output)))
@@ -64,7 +73,7 @@ func fileHash(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func installedCopyMatches(source, target string, setuid bool) bool {
+func installedCopyMatches(source, target string) bool {
 	sourceHash, err := fileHash(source)
 	if err != nil {
 		return false
@@ -73,7 +82,7 @@ func installedCopyMatches(source, target string, setuid bool) bool {
 	if err != nil || sourceHash != targetHash {
 		return false
 	}
-	info, err := os.Stat(target)
+	info, err := os.Lstat(target)
 	if err != nil || !info.Mode().IsRegular() {
 		return false
 	}
@@ -81,19 +90,19 @@ func installedCopyMatches(source, target string, setuid bool) bool {
 	if !ok || stat.Uid != 0 || info.Mode().Perm() != 0755 {
 		return false
 	}
-	return !setuid || info.Mode()&os.ModeSetuid != 0
+	return info.Mode()&os.ModeSetuid == 0
 }
 
-func ensureTunHelper(self, binary string) error {
-	helper := filepath.Join(tunInstallDir, "helper")
+func ensureTunService(service, binary string) error {
+	helper := filepath.Join(tunInstallDir, "service")
 	core := filepath.Join(tunInstallDir, "mihomo")
 	ownerFile := filepath.Join(tunInstallDir, "owner-uid")
 	ownerUID := strconv.Itoa(os.Getuid())
 	installedOwner, _ := os.ReadFile(ownerFile)
-	if strings.TrimSpace(string(installedOwner)) == ownerUID && installedCopyMatches(self, helper, true) && installedCopyMatches(binary, core, false) {
+	if strings.TrimSpace(string(installedOwner)) == ownerUID && installedCopyMatches(service, helper) && installedCopyMatches(binary, core) && serviceAvailable() {
 		return nil
 	}
-	selfHash, err := fileHash(self)
+	serviceHash, err := fileHash(service)
 	if err != nil {
 		return err
 	}
@@ -101,118 +110,43 @@ func ensureTunHelper(self, binary string) error {
 	if err != nil {
 		return err
 	}
-	helperTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".helper-%d", os.Getpid()))
+	helperTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".service-%d", os.Getpid()))
 	coreTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".mihomo-%d", os.Getpid()))
-	// Check the copied bytes before setting the privilege bit. Every variable
-	// path is shell-quoted, and the destination directory is root-owned.
+	plist := "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>" + tunServiceID + "</string><key>ProgramArguments</key><array><string>" + helper + "</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>"
 	command := strings.Join([]string{
 		"set -e",
 		"/usr/bin/install -d -o root -g wheel -m 0755 " + shellQuote(tunInstallDir),
-		"/usr/bin/install -o root -g wheel -m 0755 " + shellQuote(self) + " " + shellQuote(helperTemp),
+		"/usr/bin/install -o root -g wheel -m 0755 " + shellQuote(service) + " " + shellQuote(helperTemp),
 		"/usr/bin/install -o root -g wheel -m 0755 " + shellQuote(binary) + " " + shellQuote(coreTemp),
-		"test \"$(/usr/bin/shasum -a 256 " + shellQuote(helperTemp) + " | /usr/bin/cut -d ' ' -f 1)\" = " + shellQuote(selfHash),
+		"test \"$(/usr/bin/shasum -a 256 " + shellQuote(helperTemp) + " | /usr/bin/cut -d ' ' -f 1)\" = " + shellQuote(serviceHash),
 		"test \"$(/usr/bin/shasum -a 256 " + shellQuote(coreTemp) + " | /usr/bin/cut -d ' ' -f 1)\" = " + shellQuote(coreHash),
+		"/bin/launchctl bootout system/" + tunServiceID + " 2>/dev/null || true",
 		"/bin/mv -f " + shellQuote(coreTemp) + " " + shellQuote(core),
 		"/bin/mv -f " + shellQuote(helperTemp) + " " + shellQuote(helper),
-		"/bin/chmod 4755 " + shellQuote(helper),
+		"/bin/chmod 0755 " + shellQuote(helper),
+		"/bin/rm -f " + shellQuote(filepath.Join(tunInstallDir, "helper")),
 		"/usr/bin/printf %s " + shellQuote(ownerUID) + " > " + shellQuote(ownerFile),
+		"/usr/sbin/chown root:wheel " + shellQuote(ownerFile),
 		"/bin/chmod 0644 " + shellQuote(ownerFile),
+		"/usr/bin/printf %s " + shellQuote(plist) + " > " + shellQuote(tunServicePlist),
+		"/usr/sbin/chown root:wheel " + shellQuote(tunServicePlist),
+		"/bin/chmod 0644 " + shellQuote(tunServicePlist),
+		"/bin/launchctl bootstrap system " + shellQuote(tunServicePlist),
 	}, "; ")
-	script := "do shell script " + strconv.Quote(command) + " with administrator privileges with prompt \"Vela 首次启用 Tun 需要安装辅助程序\""
+	script := "do shell script " + strconv.Quote(command) + " with administrator privileges with prompt \"Vela Tun 需要安装系统服务\""
 	output, err := exec.Command("/usr/bin/osascript", "-e", script).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("安装 Tun 辅助程序失败: %w；%s", err, strings.TrimSpace(string(output)))
 	}
 	installedOwner, _ = os.ReadFile(ownerFile)
-	if strings.TrimSpace(string(installedOwner)) != ownerUID || !installedCopyMatches(self, helper, true) || !installedCopyMatches(binary, core, false) {
+	if strings.TrimSpace(string(installedOwner)) != ownerUID || !installedCopyMatches(service, helper) || !installedCopyMatches(binary, core) {
 		return errors.New("Tun 辅助程序安装后校验失败")
 	}
 	return nil
 }
 
-// RunTunHelper is entered only by the authorized child process. It owns the
-// elevated core and stops it when the GUI exits or writes the stop marker.
-func RunTunHelper(args []string) error {
-	if os.Geteuid() != 0 || os.Getuid() == 0 {
-		return errors.New("Tun helper 需要管理员权限")
-	}
-	if len(args) != 4 {
-		return errors.New("Tun helper 参数无效")
-	}
-	dataDir, configPath, stopPath := args[0], args[1], args[2]
-	parentPID, err := strconv.Atoi(args[3])
-	if err != nil || parentPID <= 1 {
-		return errors.New("Tun helper 父进程无效")
-	}
-	if !filepath.IsAbs(dataDir) || !filepath.IsAbs(configPath) || !filepath.IsAbs(stopPath) {
-		return errors.New("Tun helper 路径必须为绝对路径")
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	if filepath.Clean(self) != filepath.Join(tunInstallDir, "helper") {
-		return errors.New("Tun helper 安装位置无效")
-	}
-	ownerBytes, err := os.ReadFile(filepath.Join(tunInstallDir, "owner-uid"))
-	if err != nil || strings.TrimSpace(string(ownerBytes)) != strconv.Itoa(os.Getuid()) {
-		return errors.New("Tun helper 当前用户未授权")
-	}
-	binary := filepath.Join(tunInstallDir, "mihomo")
-	compiled, err := validateTunConfig(dataDir, configPath, stopPath)
-	if err != nil {
-		return err
-	}
-	configFile, err := os.CreateTemp(tunInstallDir, ".runtime-*.yaml")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(configFile.Name())
-	if _, err := configFile.Write(compiled); err != nil {
-		configFile.Close()
-		return err
-	}
-	if err := configFile.Close(); err != nil {
-		return err
-	}
-	cmd := exec.Command(binary, "-d", dataDir, "-f", configFile.Name())
-	cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/root"}
-	logs := &tunLog{}
-	cmd.Stdout, cmd.Stderr = logs, logs
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动 Tun 内核失败: %w", err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	defer os.Remove(stopPath)
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				return fmt.Errorf("Tun 内核退出: %w；%s", err, strings.TrimSpace(logs.String()))
-			}
-			return nil
-		case <-ticker.C:
-			_, markerErr := os.Stat(stopPath)
-			parentErr := syscall.Kill(parentPID, 0)
-			if markerErr == nil || errors.Is(parentErr, syscall.ESRCH) {
-				_ = cmd.Process.Signal(os.Interrupt)
-				select {
-				case <-done:
-				case <-time.After(3 * time.Second):
-					_ = cmd.Process.Kill()
-					<-done
-				}
-				return nil
-			}
-		}
-	}
-}
-
-func validateTunConfig(dataDir, configPath, stopPath string) ([]byte, error) {
-	owner, err := user.LookupId(strconv.Itoa(os.Getuid()))
+func validateTunConfig(uid int, dataDir, configPath, stopPath string) ([]byte, error) {
+	owner, err := user.LookupId(strconv.Itoa(uid))
 	if err != nil {
 		return nil, err
 	}

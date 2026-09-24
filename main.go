@@ -13,17 +13,17 @@ import (
 var assets embed.FS
 
 func main() {
-	if os.Geteuid() != os.Getuid() && (len(os.Args) < 2 || os.Args[1] != "--vela-tun-helper") {
-		log.Fatal("Tun 辅助程序只能用于启动 Tun 内核")
+	if os.Geteuid() != os.Getuid() {
+		log.Fatal("Vela 图形程序不能以提权身份运行")
 	}
-	if len(os.Args) > 1 && os.Args[1] == "--vela-tun-helper" {
-		if err := macos.RunTunHelper(os.Args[2:]); err != nil {
+	if len(os.Args) > 1 && os.Args[1] == "--vela-tun-client" {
+		if err := macos.RunTunClient(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "--vela-tun-uninstall" {
-		if err := macos.UninstallTunHelper(); err != nil {
+		if err := macos.UninstallTunService(); err != nil {
 			log.Fatal(err)
 		}
 		return

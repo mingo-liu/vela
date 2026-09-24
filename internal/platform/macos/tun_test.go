@@ -4,10 +4,44 @@ package macos
 
 import (
 	"bytes"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mingo-liu/vela/internal/profile"
 )
+
+func TestTunServiceReadsUnixPeerUID(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "vela-peer-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "service.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	client, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	server, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	uid, err := tunPeerUID(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uid != os.Getuid() {
+		t.Fatalf("peer uid = %d, want %d", uid, os.Getuid())
+	}
+}
 
 func TestTunHelperAcceptsOnlyManagedConfig(t *testing.T) {
 	raw := []byte("proxies: []\nrules:\n  - MATCH,DIRECT\n")

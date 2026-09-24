@@ -312,7 +312,7 @@ func (r *Runner) start(tun bool) (State, error) {
 			stopPath := filepath.Join(r.dataDir, fmt.Sprintf("tun-stop-%s", r.secret))
 			cmd, err = r.tunLauncher(configPath, stopPath)
 			if err != nil {
-				return r.fail(fmt.Errorf("Tun 授权失败: %w", err))
+				return r.fail(fmt.Errorf("Tun 服务启动失败: %w", err))
 			}
 			r.tunStopPath = stopPath
 		} else {

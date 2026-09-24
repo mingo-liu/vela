@@ -30,6 +30,7 @@ tasks:
       - task: common:go:mod:tidy
       - task: common:prepare:mihomo
       - task: common:prepare:geodata
+      - task: build:tun:service
       - task: common:build:frontend
         vars:
           BUILD_FLAGS:
@@ -87,6 +88,18 @@ tasks:
       DOCKER_MOUNTS:
         sh: 'wails3 tool docker-mounts'
 
+  build:tun:service:
+    summary: Builds the standalone privileged TUN service
+    internal: true
+    cmds:
+      - mkdir -p build/resources
+      - go build -trimpath -buildvcs=false -ldflags="-w -s" -o build/resources/.vela-tun-service-new ./cmd/vela-tun-service
+      - mv -f build/resources/.vela-tun-service-new build/resources/vela-tun-service
+    env:
+      GOOS: darwin
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_ENABLED: 1
+
   build:universal:
     summary: Builds darwin universal binary (arm64 + amd64)
     deps:
@@ -100,6 +113,26 @@ tasks:
           OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
     cmds:
       - task: '{{if eq OS "darwin"}}build:universal:lipo:native{{else}}build:universal:lipo:go{{end}}'
+      - task: build:tun:service:universal
+
+  build:tun:service:universal:
+    summary: Builds a universal TUN service
+    internal: true
+    cmds:
+      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-w -s" -o build/resources/vela-tun-service-amd64 ./cmd/vela-tun-service
+      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-w -s" -o build/resources/vela-tun-service-arm64 ./cmd/vela-tun-service
+      - task: '{{if eq OS "darwin"}}build:tun:service:lipo:native{{else}}build:tun:service:lipo:go{{end}}'
+      - rm build/resources/vela-tun-service-amd64 build/resources/vela-tun-service-arm64
+
+  build:tun:service:lipo:native:
+    internal: true
+    cmds:
+      - lipo -create -output build/resources/vela-tun-service build/resources/vela-tun-service-amd64 build/resources/vela-tun-service-arm64
+
+  build:tun:service:lipo:go:
+    internal: true
+    cmds:
+      - wails3 tool lipo -output build/resources/vela-tun-service -input build/resources/vela-tun-service-amd64 -input build/resources/vela-tun-service-arm64
 
   build:universal:lipo:native:
     summary: Creates universal binary using native lipo (macOS)
@@ -164,6 +197,7 @@ tasks:
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo"
+      - cp build/resources/vela-tun-service "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service"
       - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Country.mmdb"
       - |
         rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
@@ -190,11 +224,13 @@ tasks:
     deps:
       - task: common:prepare:mihomo
       - task: common:prepare:geodata
+      - task: build:tun:service
     cmds:
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/mihomo"
+      - cp build/resources/vela-tun-service "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/vela-tun-service"
       - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/Country.mmdb"
       - |
         rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/Assets.car"

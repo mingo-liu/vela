@@ -216,6 +216,11 @@ if [ "$OBFUSCATED" = "true" ]; then
 fi
 
 ${COMPILER} -tags "$TAGS" -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o bin/${APP}-${GOOS}-${GOARCH}${EXT} .
+if [ "$GOOS" = "darwin" ]; then
+    mkdir -p build/resources
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-w -s" -o build/resources/.vela-tun-service-new ./cmd/vela-tun-service
+    mv -f build/resources/.vela-tun-service-new build/resources/vela-tun-service
+fi
 echo "Built: bin/${APP}-${GOOS}-${GOARCH}${EXT}"
 SCRIPT
 RUN chmod +x /usr/local/bin/build.sh
