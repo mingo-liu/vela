@@ -79,9 +79,13 @@ func Run(assets fs.FS) error {
 	tray := wails.SystemTray.New()
 	tray.SetLabel("Vela")
 	menu := wails.NewMenu()
+	updateConnectionMenu := func(state mihomo.State) {
+		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
+		tunMenuItem.SetChecked(state.TunEnabled)
+	}
 	openItem := menu.Add(translateMenu(language, "打开 Vela", "Open Vela"))
 	openItem.OnClick(func(_ *application.Context) { window.Show(); window.Focus() })
-	settingsItem := menu.Add(translateMenu(language, "设置…", "Settings…"))
+	settingsItem := menu.Add(translateMenu(language, "设置", "Settings"))
 	settingsItem.OnClick(func(_ *application.Context) {
 		window.Show()
 		window.Focus()
@@ -97,32 +101,30 @@ func Run(assets fs.FS) error {
 	systemProxyMenuItem = menu.AddCheckbox(translateMenu(language, "系统代理", "System Proxy"), false)
 	systemProxyMenuItem.OnClick(func(_ *application.Context) {
 		state, _ := runner.SetSystemProxy(!runner.Snapshot().SystemProxyEnabled)
-		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
-		tunMenuItem.SetChecked(state.TunEnabled)
+		updateConnectionMenu(state)
 	})
 	tunMenuItem = menu.AddCheckbox(translateMenu(language, "Tun 模式", "Tun Mode"), false)
 	tunMenuItem.OnClick(func(_ *application.Context) {
 		state, _ := runner.SetTun(!runner.Snapshot().TunEnabled)
-		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
-		tunMenuItem.SetChecked(state.TunEnabled)
+		updateConnectionMenu(state)
 	})
 	menu.AddSeparator()
 	quitItem := menu.Add(translateMenu(language, "退出 Vela", "Quit Vela"))
 	quitItem.OnClick(func(_ *application.Context) { wails.Quit() })
 	tray.SetMenu(menu)
+	updateConnectionMenu(runner.Snapshot())
 	updateMenuLanguage = func(language string) {
 		openItem.SetLabel(translateMenu(language, "打开 Vela", "Open Vela"))
-		settingsItem.SetLabel(translateMenu(language, "设置…", "Settings…"))
+		settingsItem.SetLabel(translateMenu(language, "设置", "Settings"))
 		logsItem.SetLabel(translateMenu(language, "日志", "Logs"))
 		systemProxyMenuItem.SetLabel(translateMenu(language, "系统代理", "System Proxy"))
 		tunMenuItem.SetLabel(translateMenu(language, "Tun 模式", "Tun Mode"))
+		updateConnectionMenu(runner.Snapshot())
 		quitItem.SetLabel(translateMenu(language, "退出 Vela", "Quit Vela"))
 	}
 	go func() {
 		for range menuStateUpdates {
-			state := runner.Snapshot()
-			systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
-			tunMenuItem.SetChecked(state.TunEnabled)
+			updateConnectionMenu(runner.Snapshot())
 		}
 	}()
 	if settings, err := store.Settings(); err == nil && settings.AutoConnect && store.Exists() {
