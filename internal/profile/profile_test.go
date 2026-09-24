@@ -62,10 +62,29 @@ func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 	}
 }
 
+func TestCompileUsesSelectedRoutingMode(t *testing.T) {
+	for _, mode := range []string{RoutingRule, RoutingGlobal, RoutingDirect} {
+		compiled, err := CompileForMode([]byte("mode: direct\nrules: [MATCH,DIRECT]\n"), 7890, 9090, "secret", false, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(compiled, &doc); err != nil {
+			t.Fatal(err)
+		}
+		if got := lookup(doc.Content[0], "mode"); got == nil || got.Value != mode {
+			t.Fatalf("compiled mode = %v, want %q", got, mode)
+		}
+	}
+	if _, err := CompileForMode([]byte("rules: [MATCH,DIRECT]\n"), 7890, 9090, "secret", false, "invalid"); err == nil {
+		t.Fatal("invalid mode accepted")
+	}
+}
+
 func TestCompileManagesTunForBothModes(t *testing.T) {
 	source := []byte("tun:\n  enable: true\n  device: utun99\n  auto-route: false\nrules: [MATCH,DIRECT]\n")
 	for _, enabled := range []bool{false, true} {
-		compiled, err := CompileForMode(source, 7890, 9090, "secret", enabled)
+		compiled, err := CompileForMode(source, 7890, 9090, "secret", enabled, RoutingRule)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +113,7 @@ func TestCompileTunWithRealCore(t *testing.T) {
 		t.Skip("set VELA_TEST_MIHOMO to check generated TUN config")
 	}
 	dir := t.TempDir()
-	compiled, err := CompileForMode([]byte("proxies: []\nrules:\n  - MATCH,DIRECT\n"), 7890, 9090, "secret", true)
+	compiled, err := CompileForMode([]byte("proxies: []\nrules:\n  - MATCH,DIRECT\n"), 7890, 9090, "secret", true, RoutingRule)
 	if err != nil {
 		t.Fatal(err)
 	}

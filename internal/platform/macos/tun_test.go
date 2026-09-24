@@ -46,11 +46,20 @@ func TestTunServiceReadsUnixPeerUID(t *testing.T) {
 func TestTunHelperAcceptsOnlyManagedConfig(t *testing.T) {
 	raw := []byte("proxies: []\nrules:\n  - MATCH,DIRECT\n")
 	secret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	compiled, err := profile.CompileForMode(raw, 7890, 19090, secret, true)
+	for _, mode := range []string{profile.RoutingRule, profile.RoutingGlobal, profile.RoutingDirect} {
+		compiled, err := profile.CompileForMode(raw, 7890, 19090, secret, true, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := validateManagedTunConfig(compiled, raw, mode); err != nil {
+			t.Fatalf("mode %s rejected: %v", mode, err)
+		}
+	}
+	compiled, err := profile.CompileForMode(raw, 7890, 19090, secret, true, profile.RoutingRule)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validateManagedTunConfig(compiled, raw); err != nil {
+	if _, err := validateManagedTunConfig(compiled, raw, profile.RoutingRule); err != nil {
 		t.Fatal(err)
 	}
 	for _, changed := range [][]byte{
@@ -58,7 +67,7 @@ func TestTunHelperAcceptsOnlyManagedConfig(t *testing.T) {
 		bytes.Replace(compiled, []byte("auto-route: true"), []byte("auto-route: false"), 1),
 		append(append([]byte(nil), compiled...), []byte("listeners: [{name: open, type: mixed, port: 9000}]\n")...),
 	} {
-		if _, err := validateManagedTunConfig(changed, raw); err == nil {
+		if _, err := validateManagedTunConfig(changed, raw, profile.RoutingRule); err == nil {
 			t.Fatalf("accepted altered root config: %s", changed)
 		}
 	}

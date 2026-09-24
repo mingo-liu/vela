@@ -110,6 +110,116 @@ rules:
 	}
 }
 
+func TestRoutingModeOfflineAndControllerUpdate(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	runner := NewRunner(store, nil, dir, "", 7890, nil, nil)
+	if state, err := runner.SetRoutingMode(profile.RoutingGlobal); err != nil || state.RoutingMode != profile.RoutingGlobal {
+		t.Fatalf("offline selection: %+v, %v", state, err)
+	}
+	if got := NewRunner(store, nil, dir, "", 7890, nil, nil).Snapshot().RoutingMode; got != profile.RoutingGlobal {
+		t.Fatalf("mode not restored: %q", got)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/configs" || r.Header.Get("Authorization") != "Bearer test-secret" {
+			t.Errorf("unexpected controller request: %s %s", r.Method, r.URL)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Mode == profile.RoutingDirect {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if body.Mode != profile.RoutingRule {
+			t.Errorf("unexpected mode: %q", body.Mode)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.apiPort = port
+	runner.secret = "test-secret"
+	runner.state.Status = "running"
+	runner.cmd = &exec.Cmd{}
+	if state, err := runner.SetRoutingMode(profile.RoutingRule); err != nil || state.RoutingMode != profile.RoutingRule {
+		t.Fatalf("online selection: %+v, %v", state, err)
+	}
+	if state, err := runner.SetRoutingMode(profile.RoutingDirect); err == nil || state.RoutingMode != profile.RoutingRule {
+		t.Fatalf("failed update changed state: %+v, %v", state, err)
+	}
+	if got, err := store.RoutingMode(); err != nil || got != profile.RoutingRule {
+		t.Fatalf("failed update changed saved mode: %q, %v", got, err)
+	}
+	if _, err := runner.SetRoutingMode("invalid"); err == nil {
+		t.Fatal("invalid mode accepted")
+	}
+}
+
+func TestRoutingModeWithRealCore(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to run the real core integration test")
+	}
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if err := store.Import("proxy-groups:\n  - name: Choose\n    type: select\n    proxies: [DIRECT, REJECT]\nrules:\n  - MATCH,Choose\n"); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, nil, nil)
+	t.Cleanup(runner.Close)
+	if _, err := runner.SetRoutingMode(profile.RoutingGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{profile.RoutingGlobal, profile.RoutingRule, profile.RoutingDirect} {
+		if _, err := runner.SetRoutingMode(mode); err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Mode string `json:"mode"`
+		}
+		if err := runner.request(http.MethodGet, "/configs", nil, &config); err != nil || config.Mode != mode {
+			t.Fatalf("core mode = %q, %v; want %q", config.Mode, err, mode)
+		}
+	}
+	if _, err := runner.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, nil, nil)
+	t.Cleanup(restarted.Close)
+	if state := restarted.Snapshot(); state.RoutingMode != profile.RoutingDirect {
+		t.Fatalf("restart lost saved mode: %+v", state)
+	}
+	if _, err := restarted.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Mode string `json:"mode"`
+	}
+	if err := restarted.request(http.MethodGet, "/configs", nil, &config); err != nil || config.Mode != profile.RoutingDirect {
+		t.Fatalf("restarted core mode = %q, %v", config.Mode, err)
+	}
+}
+
 func TestTunStartFailureRestoresSystemProxy(t *testing.T) {
 	binary := os.Getenv("VELA_TEST_MIHOMO")
 	if binary == "" {
@@ -183,6 +293,9 @@ func TestSelectSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	if _, err := runner.SetSystemProxy(true); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := runner.SetRoutingMode(profile.RoutingGlobal); err != nil {
+		t.Fatal(err)
+	}
 	state, err := runner.SelectSubscription(list[0].ID)
 	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
 		t.Fatalf("switch while connected: %+v, %v", state, err)
@@ -190,6 +303,12 @@ func TestSelectSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	groups, err := runner.Groups()
 	if err != nil || !hasGroup(groups, "One") || hasGroup(groups, "Two") {
 		t.Fatalf("running config was not reloaded: %+v, %v", groups, err)
+	}
+	var runningConfig struct {
+		Mode string `json:"mode"`
+	}
+	if err := runner.request(http.MethodGet, "/configs", nil, &runningConfig); err != nil || runningConfig.Mode != profile.RoutingGlobal {
+		t.Fatalf("subscription switch lost routing mode: %q, %v", runningConfig.Mode, err)
 	}
 	list, err = subs.List()
 	if err != nil || !list[0].Active || list[1].Active {

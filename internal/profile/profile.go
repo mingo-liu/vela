@@ -175,13 +175,16 @@ func (s *Store) NodeNames() ([]string, error) {
 // Compile preserves compatible user settings while taking ownership of every
 // inbound and controller setting. This first slice accepts inline resources only.
 func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte, error) {
-	return CompileForMode(data, mixedPort, controllerPort, secret, false)
+	return CompileForMode(data, mixedPort, controllerPort, secret, false, RoutingRule)
 }
 
 // CompileForMode replaces inbound settings, including TUN, with Vela-managed values.
-func CompileForMode(data []byte, mixedPort, controllerPort int, secret string, tun bool) ([]byte, error) {
+func CompileForMode(data []byte, mixedPort, controllerPort int, secret string, tun bool, routingMode string) ([]byte, error) {
 	if mixedPort < 1 || mixedPort > 65535 || controllerPort < 1 || controllerPort > 65535 || secret == "" {
 		return nil, errors.New("受管端口或控制密钥无效")
+	}
+	if !ValidRoutingMode(routingMode) {
+		return nil, errors.New("无效的代理模式")
 	}
 	if len(data) == 0 || len(data) > MaxConfigSize {
 		return nil, fmt.Errorf("配置大小必须在 1 字节到 %d 字节之间", MaxConfigSize)
@@ -253,7 +256,7 @@ func CompileForMode(data []byte, mixedPort, controllerPort int, secret string, t
 	set(root, "mixed-port", fmt.Sprint(mixedPort), "!!int")
 	set(root, "allow-lan", "false", "!!bool")
 	set(root, "bind-address", "127.0.0.1", "!!str")
-	set(root, "mode", "rule", "!!str")
+	set(root, "mode", routingMode, "!!str")
 	set(root, "external-controller", fmt.Sprintf("127.0.0.1:%d", controllerPort), "!!str")
 	set(root, "secret", secret, "!!str")
 	if tun {

@@ -1,6 +1,6 @@
 # Vela
 
-Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当前 MVP 支持导入单份 mihomo YAML 或 HTTP/HTTPS 订阅地址、手动更新订阅、选择手动策略组中的节点，以及系统代理和 Tun 两种连接模式。关闭窗口后应用留在菜单栏，明确退出时停止内核。
+Vela 是基于 Wails v3、React 和 mihomo 的 macOS 本地代理客户端。当前 MVP 支持导入单份 mihomo YAML 或 HTTP/HTTPS 订阅地址、手动更新订阅、选择手动策略组中的节点，以及系统代理和 Tun 两种网络设置。代理模式可选 Rule、Global 或 Direct。关闭窗口后应用留在菜单栏，明确退出时停止内核。
 
 本地 mixed 端口固定为 `127.0.0.1:7890`。打开系统代理时，Vela 先启动内核，再让遵循 macOS 系统代理设置的应用通过 Vela 连接；关闭时先恢复原代理设置，再停止内核。独立监视进程会在 GUI 异常退出时尝试恢复。系统代理不覆盖不遵循该设置的应用或 UDP 流量。
 
@@ -8,7 +8,7 @@ Tun 模式首次使用或 Tun 服务 / mihomo 更新后会请求一次 macOS 管
 
 如需移除已授权的 Tun 服务，先退出 Vela，再运行 `bin/vela --vela-tun-uninstall`（已打包应用可使用 `.app/Contents/MacOS/vela`）。
 
-窗口左侧的 Home 显示连接状态和两种模式的开关，Proxies 用于选择策略组节点、测量节点延迟并按名称或延迟排序，Profiles 用于导入 YAML 或管理订阅。未连接时测速会临时启动内核，完成后关闭，不改变连接模式。
+窗口左侧的 Home 显示连接状态、网络设置开关和代理模式选择。代理模式默认 Rule；Global 使用 Proxies 页的 GLOBAL 策略组，Direct 让进入内核的流量直连。代理模式可以在未连接时预选，运行中切换会即时生效，并在重启或切换订阅后保持。Proxies 用于选择策略组节点、测量节点延迟并按名称或延迟排序，Profiles 用于导入 YAML 或管理订阅。未连接时测速会临时启动内核，完成后关闭，不改变网络设置。
 
 ## 构建与运行
 

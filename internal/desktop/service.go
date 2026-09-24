@@ -45,6 +45,10 @@ func (s *RuntimeService) SetTun(enabled bool) (mihomo.State, error) {
 	return s.runner.SetTun(enabled)
 }
 
+func (s *RuntimeService) SetRoutingMode(mode string) (mihomo.State, error) {
+	return s.runner.SetRoutingMode(mode)
+}
+
 func (s *RuntimeService) Groups() ([]mihomo.Group, error) { return s.runner.Groups() }
 
 func (s *RuntimeService) NodeNames() ([]string, error) { return s.runner.NodeNames() }

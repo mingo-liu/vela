@@ -8,7 +8,12 @@ import type { Subscription } from '../bindings/github.com/mingo-liu/vela/interna
 type Page = 'home' | 'proxies' | 'profiles'
 type SortMode = 'name' | 'delay'
 
-const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false }
+const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false, routingMode: 'rule' }
+const routingModes = [
+  { value: 'rule', label: 'Rule', description: '按配置规则分流' },
+  { value: 'global', label: 'Global', description: '使用 GLOBAL 策略组' },
+  { value: 'direct', label: 'Direct', description: '全部直连' },
+] as const
 const navigation = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'proxies', label: 'Proxies', icon: GlobeHemisphereWest },
@@ -223,10 +228,18 @@ export default function App() {
         {(notice || state.error) && <div className="alert" role="alert">{notice || state.error}</div>}
         <section className="panel connection-panel" aria-labelledby="connection-title">
           <div className="connection-main"><div><span className="section-kicker">CONNECTION</span><h2 id="connection-title">{connected ? '连接已就绪' : '准备开始连接'}</h2></div></div>
-          <div className="connection-modes" aria-label="连接模式">
+          <h3 className="connection-setting-title">网络设置</h3>
+          <div className="connection-modes" aria-label="网络设置">
             <button className={`mode-option${state.systemProxyEnabled ? ' on' : ''}`} type="button" role="switch" aria-label="系统代理" aria-checked={state.systemProxyEnabled} disabled={busy || (!state.hasProfile && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}><span><strong>系统代理</strong><small>让遵循系统代理设置的应用连接</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
             <button className={`mode-option${state.tunEnabled ? ' on' : ''}`} type="button" role="switch" aria-label="Tun 模式" aria-checked={state.tunEnabled} disabled={busy || !state.tunSupported || (!state.hasProfile && !state.tunEnabled)} onClick={() => void execute(() => Runtime.SetTun(!state.tunEnabled))}><span><strong>Tun 模式</strong><small>{state.tunSupported ? '首次使用或 Tun 服务、内核更新后授权' : '当前平台暂不支持'}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
           </div>
+          <fieldset className="routing-settings" disabled={busy}>
+            <legend className="connection-setting-title">代理模式</legend>
+            <div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}>
+              <input type="radio" name="routing-mode" value={option.value} checked={state.routingMode === option.value} onChange={() => void execute(() => Runtime.SetRoutingMode(option.value))} />
+              <span><strong>{option.label}</strong><small>{option.description}</small></span>
+            </label>)}</div>
+          </fieldset>
           {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>先导入配置以启用连接 <ArrowRight size={17} /></button>}
           <div className="connection-meta"><div><span>本地代理</span><strong>127.0.0.1:{state.port}</strong></div><div><span>内核状态</span><strong>{running ? '运行中' : state.status === 'starting' ? '启动中' : '已停止'}</strong></div><div><span>配置文件</span><strong>{state.hasProfile ? '已导入' : '未导入'}</strong></div></div>
         </section>

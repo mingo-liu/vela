@@ -30,6 +30,7 @@ type State struct {
 	SystemProxyEnabled bool   `json:"systemProxyEnabled"`
 	TunEnabled         bool   `json:"tunEnabled"`
 	TunSupported       bool   `json:"tunSupported"`
+	RoutingMode        string `json:"routingMode"`
 }
 
 type SystemProxy interface {
@@ -70,7 +71,12 @@ type Runner struct {
 
 func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binary string, port int, systemProxy SystemProxy, onChange func(State)) *Runner {
 	transport := &http.Transport{Proxy: nil}
-	r := &Runner{store: store, subs: subs, dataDir: dataDir, binary: binary, state: State{Status: "stopped", Port: port, HasProfile: store.Exists()}, client: &http.Client{Timeout: 2 * time.Second, Transport: transport}, logs: &tailWriter{}, onChange: onChange, systemProxy: systemProxy}
+	r := &Runner{store: store, subs: subs, dataDir: dataDir, binary: binary, state: State{Status: "stopped", Port: port, HasProfile: store.Exists(), RoutingMode: profile.RoutingRule}, client: &http.Client{Timeout: 2 * time.Second, Transport: transport}, logs: &tailWriter{}, onChange: onChange, systemProxy: systemProxy}
+	if mode, err := store.RoutingMode(); err != nil {
+		r.state.Error = err.Error()
+	} else {
+		r.state.RoutingMode = mode
+	}
 	if systemProxy != nil {
 		if err := systemProxy.Recover(); err != nil {
 			r.state.Error = fmt.Sprintf("上次系统代理恢复失败: %v", err)
@@ -162,7 +168,7 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 		if err != nil {
 			return r.state, err
 		}
-		previousConfig, err = profile.CompileForMode(previousProfile, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled)
+		previousConfig, err = profile.CompileForMode(previousProfile, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled, r.state.RoutingMode)
 		if err != nil {
 			return r.state, err
 		}
@@ -221,7 +227,7 @@ func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, p
 	if err := r.ensureGeoIPDatabase(raw); err != nil {
 		return rollback(err, false)
 	}
-	compiled, err := profile.CompileForMode(raw, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled)
+	compiled, err := profile.CompileForMode(raw, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled, r.state.RoutingMode)
 	if err != nil {
 		return rollback(err, false)
 	}
@@ -291,7 +297,7 @@ func (r *Runner) start(tun bool) (State, error) {
 			return r.fail(err)
 		}
 		r.apiPort = port
-		compiled, err := profile.CompileForMode(raw, r.state.Port, port, r.secret, tun)
+		compiled, err := profile.CompileForMode(raw, r.state.Port, port, r.secret, tun, r.state.RoutingMode)
 		if err != nil {
 			return r.fail(err)
 		}
@@ -482,6 +488,47 @@ func (r *Runner) SetTun(enabled bool) (State, error) {
 		return r.setMode("tun")
 	}
 	return r.setMode("off")
+}
+
+func (r *Runner) SetRoutingMode(mode string) (State, error) {
+	if !profile.ValidRoutingMode(mode) {
+		return r.Snapshot(), errors.New("无效的代理模式")
+	}
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil && r.state.Status != "running" {
+		return r.state, errors.New("内核正在切换状态，请稍后重试")
+	}
+	previous := r.state.RoutingMode
+	if mode == previous {
+		return r.state, nil
+	}
+	if r.state.Status == "running" {
+		if err := r.patchRoutingMode(mode); err != nil {
+			return r.state, fmt.Errorf("切换代理模式失败: %w", err)
+		}
+	}
+	if err := r.store.SaveRoutingMode(mode); err != nil {
+		if r.state.Status == "running" {
+			return r.state, errors.Join(fmt.Errorf("保存代理模式失败: %w", err), r.patchRoutingMode(previous))
+		}
+		return r.state, fmt.Errorf("保存代理模式失败: %w", err)
+	}
+	r.state.RoutingMode = mode
+	r.state.Error = ""
+	r.emit()
+	return r.state, nil
+}
+
+// patchRoutingMode changes only routing. Connection mode and managed listeners stay active.
+func (r *Runner) patchRoutingMode(mode string) error {
+	body, err := json.Marshal(map[string]string{"mode": mode})
+	if err != nil {
+		return err
+	}
+	return r.request(http.MethodPatch, "/configs", strings.NewReader(string(body)), nil)
 }
 
 func (r *Runner) setMode(mode string) (State, error) {
