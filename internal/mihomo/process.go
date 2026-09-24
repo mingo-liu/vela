@@ -33,6 +33,11 @@ type State struct {
 	RoutingMode        string `json:"routingMode"`
 }
 
+type CoreInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 type SystemProxy interface {
 	Enable(port int) error
 	Disable() error
@@ -98,6 +103,30 @@ func (r *Runner) Snapshot() State {
 	s := r.state
 	s.HasProfile = r.store.Exists()
 	return s
+}
+
+func (r *Runner) CoreInfo() (CoreInfo, error) {
+	if r.binary == "" {
+		return CoreInfo{}, errors.New("未找到 mihomo 内核")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, r.binary, "-v").CombinedOutput()
+	if err != nil {
+		return CoreInfo{}, fmt.Errorf("读取内核版本失败: %w", err)
+	}
+	return parseCoreInfo(string(output))
+}
+
+func parseCoreInfo(output string) (CoreInfo, error) {
+	line := strings.SplitN(strings.TrimSpace(output), "\n", 2)[0]
+	fields := strings.Fields(line)
+	for index, field := range fields {
+		if index > 0 && len(field) > 1 && field[0] == 'v' && field[1] >= '0' && field[1] <= '9' {
+			return CoreInfo{Name: strings.Join(fields[:index], " "), Version: field}, nil
+		}
+	}
+	return CoreInfo{}, errors.New("无法识别内核名称和版本号")
 }
 
 func (r *Runner) Import(data string) (State, error) {
@@ -168,7 +197,7 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 		if err != nil {
 			return r.state, err
 		}
-		previousConfig, err = profile.CompileForMode(previousProfile, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled, r.state.RoutingMode)
+		previousConfig, err = r.compile(previousProfile, r.apiPort, r.state.TunEnabled)
 		if err != nil {
 			return r.state, err
 		}
@@ -227,7 +256,7 @@ func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, p
 	if err := r.ensureGeoIPDatabase(raw); err != nil {
 		return rollback(err, false)
 	}
-	compiled, err := profile.CompileForMode(raw, r.state.Port, r.apiPort, r.secret, r.state.TunEnabled, r.state.RoutingMode)
+	compiled, err := r.compile(raw, r.apiPort, r.state.TunEnabled)
 	if err != nil {
 		return rollback(err, false)
 	}
@@ -297,7 +326,7 @@ func (r *Runner) start(tun bool) (State, error) {
 			return r.fail(err)
 		}
 		r.apiPort = port
-		compiled, err := profile.CompileForMode(raw, r.state.Port, port, r.secret, tun, r.state.RoutingMode)
+		compiled, err := r.compile(raw, port, tun)
 		if err != nil {
 			return r.fail(err)
 		}
@@ -389,6 +418,14 @@ func (r *Runner) start(tun bool) (State, error) {
 		return r.state, nil
 	}
 	return r.fail(errors.New("控制端口无法分配"))
+}
+
+func (r *Runner) compile(raw []byte, apiPort int, tun bool) ([]byte, error) {
+	settings, err := r.store.Settings()
+	if err != nil {
+		return nil, err
+	}
+	return profile.CompileWithLogLevel(raw, r.state.Port, apiPort, r.secret, tun, r.state.RoutingMode, settings.LogLevel)
 }
 
 func (r *Runner) ensureGeoIPDatabase(profile []byte) error {
@@ -520,6 +557,18 @@ func (r *Runner) SetRoutingMode(mode string) (State, error) {
 	r.state.Error = ""
 	r.emit()
 	return r.state, nil
+}
+
+func (r *Runner) SetLogLevel(level string) (profile.Settings, error) {
+	if !profile.ValidLogLevel(level) {
+		return profile.Settings{}, errors.New("无效的日志级别")
+	}
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	return r.store.UpdateSettings(func(settings *profile.Settings) error {
+		settings.LogLevel = level
+		return nil
+	})
 }
 
 // patchRoutingMode changes only routing. Connection mode and managed listeners stay active.

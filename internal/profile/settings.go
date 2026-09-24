@@ -9,41 +9,102 @@ import (
 )
 
 const (
-	RoutingRule   = "rule"
-	RoutingGlobal = "global"
-	RoutingDirect = "direct"
+	RoutingRule    = "rule"
+	RoutingGlobal  = "global"
+	RoutingDirect  = "direct"
+	LogFromProfile = "profile"
 )
+
+type Settings struct {
+	RoutingMode     string `json:"routingMode"`
+	AutoConnect     bool   `json:"autoConnect"`
+	AutoConnectMode string `json:"autoConnectMode"`
+	LogLevel        string `json:"logLevel"`
+	LaunchAtLogin   bool   `json:"launchAtLogin"`
+}
+
+func DefaultSettings() Settings {
+	return Settings{RoutingMode: RoutingRule, AutoConnectMode: "system", LogLevel: LogFromProfile}
+}
 
 func ValidRoutingMode(mode string) bool {
 	return mode == RoutingRule || mode == RoutingGlobal || mode == RoutingDirect
 }
 
-func (s *Store) RoutingMode() (string, error) {
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(s.path), "settings.json"))
+func ValidLogLevel(level string) bool {
+	switch level {
+	case LogFromProfile, "silent", "error", "warning", "info", "debug":
+		return true
+	}
+	return false
+}
+
+func validSettings(settings Settings) bool {
+	return ValidRoutingMode(settings.RoutingMode) &&
+		(settings.AutoConnectMode == "system" || settings.AutoConnectMode == "tun") &&
+		ValidLogLevel(settings.LogLevel)
+}
+
+func (s *Store) settingsPath() string {
+	return filepath.Join(filepath.Dir(s.path), "settings.json")
+}
+
+func (s *Store) readSettings() (Settings, error) {
+	settings := DefaultSettings()
+	data, err := os.ReadFile(s.settingsPath())
 	if errors.Is(err, os.ErrNotExist) {
-		return RoutingRule, nil
+		return settings, nil
 	}
 	if err != nil {
-		return "", err
+		return Settings{}, err
 	}
-	var settings struct {
-		RoutingMode string `json:"routingMode"`
+	if err := json.Unmarshal(data, &settings); err != nil || !validSettings(settings) {
+		return Settings{}, fmt.Errorf("无法读取已保存的应用设置")
 	}
-	if err := json.Unmarshal(data, &settings); err != nil || !ValidRoutingMode(settings.RoutingMode) {
-		return "", fmt.Errorf("无法读取已保存的代理模式")
+	return settings, nil
+}
+
+func (s *Store) Settings() (Settings, error) {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	return s.readSettings()
+}
+
+func (s *Store) UpdateSettings(update func(*Settings) error) (Settings, error) {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	settings, err := s.readSettings()
+	if err != nil {
+		return Settings{}, err
 	}
-	return settings.RoutingMode, nil
+	if err := update(&settings); err != nil {
+		return Settings{}, err
+	}
+	if !validSettings(settings) {
+		return Settings{}, errors.New("无效的应用设置")
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return Settings{}, err
+	}
+	if err := writeProfile(s.settingsPath(), string(data)); err != nil {
+		return Settings{}, err
+	}
+	return settings, nil
+}
+
+func (s *Store) RoutingMode() (string, error) {
+	settings, err := s.Settings()
+	return settings.RoutingMode, err
 }
 
 func (s *Store) SaveRoutingMode(mode string) error {
 	if !ValidRoutingMode(mode) {
 		return errors.New("无效的代理模式")
 	}
-	data, err := json.Marshal(struct {
-		RoutingMode string `json:"routingMode"`
-	}{RoutingMode: mode})
-	if err != nil {
-		return err
-	}
-	return writeProfile(filepath.Join(filepath.Dir(s.path), "settings.json"), string(data))
+	_, err := s.UpdateSettings(func(settings *Settings) error {
+		settings.RoutingMode = mode
+		return nil
+	})
+	return err
 }

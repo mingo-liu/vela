@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -15,7 +16,8 @@ import (
 const MaxConfigSize = 2 << 20
 
 type Store struct {
-	path string
+	path       string
+	settingsMu sync.Mutex
 }
 
 func NewStore(dataDir string) *Store {
@@ -180,11 +182,18 @@ func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte,
 
 // CompileForMode replaces inbound settings, including TUN, with Vela-managed values.
 func CompileForMode(data []byte, mixedPort, controllerPort int, secret string, tun bool, routingMode string) ([]byte, error) {
+	return CompileWithLogLevel(data, mixedPort, controllerPort, secret, tun, routingMode, LogFromProfile)
+}
+
+func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret string, tun bool, routingMode, logLevel string) ([]byte, error) {
 	if mixedPort < 1 || mixedPort > 65535 || controllerPort < 1 || controllerPort > 65535 || secret == "" {
 		return nil, errors.New("受管端口或控制密钥无效")
 	}
 	if !ValidRoutingMode(routingMode) {
 		return nil, errors.New("无效的代理模式")
+	}
+	if !ValidLogLevel(logLevel) {
+		return nil, errors.New("无效的日志级别")
 	}
 	if len(data) == 0 || len(data) > MaxConfigSize {
 		return nil, fmt.Errorf("配置大小必须在 1 字节到 %d 字节之间", MaxConfigSize)
@@ -257,6 +266,10 @@ func CompileForMode(data []byte, mixedPort, controllerPort int, secret string, t
 	set(root, "allow-lan", "false", "!!bool")
 	set(root, "bind-address", "127.0.0.1", "!!str")
 	set(root, "mode", routingMode, "!!str")
+	if logLevel != LogFromProfile {
+		remove(root, "log-level")
+		set(root, "log-level", logLevel, "!!str")
+	}
 	set(root, "external-controller", fmt.Sprintf("127.0.0.1:%d", controllerPort), "!!str")
 	set(root, "secret", secret, "!!str")
 	if tun {

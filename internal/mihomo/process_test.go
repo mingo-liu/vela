@@ -16,6 +16,16 @@ import (
 	"github.com/mingo-liu/vela/internal/profile"
 )
 
+func TestParseCoreInfo(t *testing.T) {
+	info, err := parseCoreInfo("Mihomo Meta v1.19.31 darwin arm64 with go1.26.8\nUse tags: with_gvisor\n")
+	if err != nil || info.Name != "Mihomo Meta" || info.Version != "v1.19.31" {
+		t.Fatalf("core info = %+v, %v", info, err)
+	}
+	if _, err := parseCoreInfo("unknown output"); err == nil {
+		t.Fatal("accepted version output without a version")
+	}
+}
+
 func TestRunnerWithRealCore(t *testing.T) {
 	binary := os.Getenv("VELA_TEST_MIHOMO")
 	if binary == "" {

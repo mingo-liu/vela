@@ -55,6 +55,16 @@ func TestTunHelperAcceptsOnlyManagedConfig(t *testing.T) {
 			t.Fatalf("mode %s rejected: %v", mode, err)
 		}
 	}
+	debugConfig, err := profile.CompileWithLogLevel(raw, 7890, 19090, secret, true, profile.RoutingRule, "debug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateManagedTunConfigWithLogLevel(debugConfig, raw, profile.RoutingRule, "debug"); err != nil {
+		t.Fatalf("managed log level rejected: %v", err)
+	}
+	if _, err := validateManagedTunConfig(debugConfig, raw, profile.RoutingRule); err == nil {
+		t.Fatal("unexpected log level accepted")
+	}
 	compiled, err := profile.CompileForMode(raw, 7890, 19090, secret, true, profile.RoutingRule)
 	if err != nil {
 		t.Fatal(err)

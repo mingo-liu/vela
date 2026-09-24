@@ -42,7 +42,7 @@ func Run(assets fs.FS) error {
 	if runtime.GOOS == "darwin" {
 		runner.SetTunLauncher(macos.NewTunLauncher(binary, dataDir))
 	}
-	service := desktop.NewRuntimeService(runner)
+	service := desktop.NewRuntimeService(runner, store, dataDir)
 	wails = application.New(application.Options{
 		Name:        "Vela",
 		Description: "Vela local proxy",
@@ -63,6 +63,12 @@ func Run(assets fs.FS) error {
 	tray.SetLabel("Vela")
 	menu := wails.NewMenu()
 	menu.Add("打开 Vela").OnClick(func(_ *application.Context) { window.Show(); window.Focus() })
+	menu.Add("设置…").OnClick(func(_ *application.Context) {
+		window.Show()
+		window.Focus()
+		wails.Event.Emit("open-settings")
+	})
+	menu.AddSeparator()
 	systemProxyMenuItem = menu.AddCheckbox("系统代理", false)
 	systemProxyMenuItem.OnClick(func(_ *application.Context) {
 		state, _ := runner.SetSystemProxy(!runner.Snapshot().SystemProxyEnabled)
@@ -85,6 +91,15 @@ func Run(assets fs.FS) error {
 			tunMenuItem.SetChecked(state.TunEnabled)
 		}
 	}()
+	if settings, err := store.Settings(); err == nil && settings.AutoConnect && store.Exists() {
+		go func() {
+			if settings.AutoConnectMode == "tun" {
+				_, _ = runner.SetTun(true)
+			} else {
+				_, _ = runner.SetSystemProxy(true)
+			}
+		}()
+	}
 	return wails.Run()
 }
 

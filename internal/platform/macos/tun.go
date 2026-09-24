@@ -166,14 +166,18 @@ func validateTunConfig(uid int, dataDir, configPath, stopPath string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	routingMode, err := store.RoutingMode()
+	settings, err := store.Settings()
 	if err != nil {
 		return nil, err
 	}
-	return validateManagedTunConfig(data, raw, routingMode)
+	return validateManagedTunConfigWithLogLevel(data, raw, settings.RoutingMode, settings.LogLevel)
 }
 
 func validateManagedTunConfig(data, raw []byte, routingMode string) ([]byte, error) {
+	return validateManagedTunConfigWithLogLevel(data, raw, routingMode, profile.LogFromProfile)
+}
+
+func validateManagedTunConfigWithLogLevel(data, raw []byte, routingMode, logLevel string) ([]byte, error) {
 	var settings struct {
 		MixedPort  int    `yaml:"mixed-port"`
 		Controller string `yaml:"external-controller"`
@@ -193,7 +197,7 @@ func validateManagedTunConfig(data, raw []byte, routingMode string) ([]byte, err
 	if _, err := hex.DecodeString(settings.Secret); err != nil {
 		return nil, errors.New("Tun helper 控制密钥无效")
 	}
-	expected, err := profile.CompileForMode(raw, 7890, apiPort, settings.Secret, true, routingMode)
+	expected, err := profile.CompileWithLogLevel(raw, 7890, apiPort, settings.Secret, true, routingMode, logLevel)
 	if err != nil {
 		return nil, err
 	}

@@ -81,6 +81,26 @@ func TestCompileUsesSelectedRoutingMode(t *testing.T) {
 	}
 }
 
+func TestCompileLogLevelOverride(t *testing.T) {
+	source := []byte("log-level: warning\nrules: [MATCH,DIRECT]\n")
+	for _, test := range []struct{ level, want string }{{LogFromProfile, "warning"}, {"debug", "debug"}} {
+		compiled, err := CompileWithLogLevel(source, 7890, 9090, "secret", false, RoutingRule, test.level)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(compiled, &doc); err != nil {
+			t.Fatal(err)
+		}
+		if got := lookup(doc.Content[0], "log-level"); got == nil || got.Value != test.want || strings.Count(string(compiled), "log-level:") != 1 {
+			t.Fatalf("log level override = %s, want %q", compiled, test.want)
+		}
+	}
+	if _, err := CompileWithLogLevel(source, 7890, 9090, "secret", false, RoutingRule, "verbose"); err == nil {
+		t.Fatal("invalid log level accepted")
+	}
+}
+
 func TestCompileManagesTunForBothModes(t *testing.T) {
 	source := []byte("tun:\n  enable: true\n  device: utun99\n  auto-route: false\nrules: [MATCH,DIRECT]\n")
 	for _, enabled := range []bool{false, true} {
