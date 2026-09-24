@@ -76,6 +76,18 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .empty-state button { margin-top: 16px; }
 .proxies-panel { display: grid; align-content: start; gap: 18px; }
 .proxies-panel .panel-heading h2 { margin-bottom: 0; }
+.logs-panel { padding: 0; overflow: hidden; }
+.logs-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 17px 24px; border-bottom: 1px solid #eceef1; color: #44474d; font-size: 12px; font-weight: 700; }
+.logs-toolbar select { min-width: 140px; padding: 9px 11px; border: 1px solid #dfe1e5; border-radius: 9px; background: #fafbfc; color: #24272d; font-size: 12px; }
+.log-list { max-height: min(65vh, 650px); overflow: auto; }
+.log-entry { display: flex; align-items: flex-start; gap: 12px; padding: 10px 24px; border-bottom: 1px solid #f0f1f3; }
+.log-entry:last-child { border-bottom: 0; }
+.log-level { flex: 0 0 64px; padding: 3px 5px; border-radius: 5px; background: #f1f2f4; color: #62666d; font-size: 10px; font-weight: 700; text-align: center; }
+.log-level-error { background: #fff0f2; color: #b91337; }
+.log-level-warning { background: #fff5e8; color: #a65c1c; }
+.log-level-info { background: #eaf3ff; color: #3769c5; }
+.log-level-debug { background: #ecf8f1; color: #25885e; }
+.log-entry code { min-width: 0; color: #343840; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 .proxy-group-stack { display: grid; gap: 14px; }
 .proxy-group { overflow: hidden; border: 1px solid #e7e8eb; border-radius: 15px; background: #f5f6f8; }
 .proxy-group-header { display: flex; align-items: center; background: #fff; }

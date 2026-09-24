@@ -87,6 +87,12 @@ func Run(assets fs.FS) error {
 		window.Focus()
 		wails.Event.Emit("open-settings")
 	})
+	logsItem := menu.Add(translateMenu(language, "日志", "Logs"))
+	logsItem.OnClick(func(_ *application.Context) {
+		window.Show()
+		window.Focus()
+		wails.Event.Emit("open-logs")
+	})
 	menu.AddSeparator()
 	systemProxyMenuItem = menu.AddCheckbox(translateMenu(language, "系统代理", "System Proxy"), false)
 	systemProxyMenuItem.OnClick(func(_ *application.Context) {
@@ -107,6 +113,7 @@ func Run(assets fs.FS) error {
 	updateMenuLanguage = func(language string) {
 		openItem.SetLabel(translateMenu(language, "打开 Vela", "Open Vela"))
 		settingsItem.SetLabel(translateMenu(language, "设置…", "Settings…"))
+		logsItem.SetLabel(translateMenu(language, "日志", "Logs"))
 		systemProxyMenuItem.SetLabel(translateMenu(language, "系统代理", "System Proxy"))
 		tunMenuItem.SetLabel(translateMenu(language, "Tun 模式", "Tun Mode"))
 		quitItem.SetLabel(translateMenu(language, "退出 Vela", "Quit Vela"))

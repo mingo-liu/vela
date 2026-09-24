@@ -1,11 +1,22 @@
 export type Language = 'zh-CN' | 'en-US'
 
+const chinese: Record<string, string> = {
+  '信息日志': '信息',
+}
+
 const english: Record<string, string> = {
   '首页': 'Home',
   '代理': 'Proxies',
   '代理设置': 'Proxy',
   '配置': 'Profiles',
   '设置': 'Settings',
+  '日志': 'Logs',
+  '内核日志': 'Core logs',
+  '全部级别': 'All levels',
+  '其他': 'Other',
+  '暂无日志': 'No logs yet',
+  '连接内核后，日志会显示在这里。': 'Core logs will appear here after connecting.',
+  '没有符合当前级别的日志': 'No logs match this level',
   '规则': 'Rule',
   '全局': 'Global',
   '直连': 'Direct',
@@ -114,7 +125,7 @@ const english: Record<string, string> = {
 }
 
 export function translate(language: Language, text: string): string {
-  return language === 'en-US' ? english[text] ?? text : text
+  return language === 'en-US' ? english[text] ?? text : chinese[text] ?? text
 }
 
 const englishErrors: Record<string, string> = {

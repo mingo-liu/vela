@@ -105,6 +105,14 @@ func (r *Runner) Snapshot() State {
 	return s
 }
 
+// Logs returns the recent core output, including output from a stopped core.
+func (r *Runner) Logs() string {
+	r.mu.Lock()
+	logs := r.logs
+	r.mu.Unlock()
+	return logs.String()
+}
+
 func (r *Runner) CoreInfo() (CoreInfo, error) {
 	if r.binary == "" {
 		return CoreInfo{}, errors.New("未找到 mihomo 内核")
@@ -1089,8 +1097,8 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.data = append(w.data, p...)
-	if len(w.data) > 16<<10 {
-		w.data = append([]byte(nil), w.data[len(w.data)-(16<<10):]...)
+	if len(w.data) > 128<<10 {
+		w.data = append([]byte(nil), w.data[len(w.data)-(128<<10):]...)
 	}
 	return len(p), nil
 }

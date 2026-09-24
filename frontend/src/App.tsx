@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, FolderOpen, GearSix, GlobeHemisphereWest, House, LinkSimple, Stack, WifiMedium } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, FolderOpen, GearSix, GlobeHemisphereWest, House, LinkSimple, ListBullets, Stack, WifiMedium } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import velaIcon from '../../build/appicon.icon/Assets/vela_icon.svg'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
@@ -8,8 +8,9 @@ import type { Subscription } from '../bindings/github.com/mingo-liu/vela/interna
 import type { Settings } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import { translate, localizeError, type Language } from './i18n'
 
-type Page = 'home' | 'proxies' | 'profiles' | 'settings'
+type Page = 'home' | 'proxies' | 'profiles' | 'logs' | 'settings'
 type SortMode = 'name' | 'delay'
+type LogLevel = 'all' | 'error' | 'warning' | 'info' | 'debug' | 'other'
 
 const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false, routingMode: 'rule' }
 const routingModes = [
@@ -21,8 +22,30 @@ const navigation = [
   { id: 'home', label: '首页', icon: House },
   { id: 'proxies', label: '代理', icon: GlobeHemisphereWest },
   { id: 'profiles', label: '配置', icon: Stack },
+  { id: 'logs', label: '日志', icon: ListBullets },
   { id: 'settings', label: '设置', icon: GearSix },
 ] as const
+
+const logLevels = [
+  { value: 'all', label: '全部级别' },
+  { value: 'error', label: '错误' },
+  { value: 'warning', label: '警告' },
+  { value: 'info', label: '信息日志' },
+  { value: 'debug', label: '调试' },
+  { value: 'other', label: '其他' },
+] as const
+
+function logLevel(line: string): Exclude<LogLevel, 'all'> {
+  const level = line.match(/\blevel\s*=\s*["']?(error|fatal|warning|warn|info|debug|trace)\b/i)?.[1]
+    ?? line.match(/^\s*(?:\[[^\]]+\]\s*)?\[?(error|fatal|warning|warn|info|debug|trace)\]?\s*[:\s]/i)?.[1]
+  switch (level?.toLowerCase()) {
+    case 'fatal': case 'error': return 'error'
+    case 'warn': case 'warning': return 'warning'
+    case 'info': return 'info'
+    case 'trace': case 'debug': return 'debug'
+    default: return 'other'
+  }
+}
 
 const defaultSettings: Settings = { mixedPort: 7890, routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', logLevel: 'profile', launchAtLogin: false, language: 'zh-CN' }
 
@@ -79,6 +102,11 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [coreInfo, setCoreInfo] = useState<CoreInfo | null>(null)
   const [coreInfoError, setCoreInfoError] = useState('')
+  const [logs, setLogs] = useState('')
+  const [logsError, setLogsError] = useState('')
+  const [selectedLogLevel, setSelectedLogLevel] = useState<LogLevel>('all')
+  const logList = useRef<HTMLDivElement>(null)
+  const followLogs = useRef(true)
   const [portDraft, setPortDraft] = useState('7890')
   const [profileRevision, setProfileRevision] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -89,6 +117,29 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = language }, [language])
 
   useEffect(() => Events.On('open-settings', () => setPage('settings')), [])
+  useEffect(() => Events.On('open-logs', () => setPage('logs')), [])
+
+  useEffect(() => {
+    if (page !== 'logs') return
+    let active = true
+    const refresh = async () => {
+      try {
+        const value = await Runtime.Logs()
+        if (active) { setLogs(value); setLogsError('') }
+      } catch (error) {
+        if (active) setLogsError(message(error))
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 1500)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [page])
+
+  useEffect(() => {
+    if (page === 'logs' && followLogs.current && logList.current) {
+      logList.current.scrollTop = logList.current.scrollHeight
+    }
+  }, [logs, page, selectedLogLevel])
 
   useEffect(() => setPortDraft(String(state.port)), [state.port])
 
@@ -268,6 +319,8 @@ export default function App() {
 
   const running = state.status === 'running'
   const connected = state.systemProxyEnabled || state.tunEnabled
+  const logLines = logs.split(/\r?\n/).filter(line => line.trim() !== '')
+  const visibleLogLines = logLines.map(line => ({ line, level: logLevel(line) })).filter(entry => selectedLogLevel === 'all' || entry.level === selectedLogLevel)
 
   return <div className="app-layout">
     <aside className="sidebar" aria-label={t('主导航')}>
@@ -364,6 +417,16 @@ export default function App() {
           <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><FileArrowUp size={24} /></div><div><h2>{t('本地配置')}</h2></div></div><button className="primary-button import-button file-button" type="button" disabled={busy || running} onClick={() => fileInput.current?.click()}>{t('选择 YAML 文件')} <FileArrowUp size={18} /></button><input ref={fileInput} className="file-input" type="file" accept=".yaml,.yml,text/yaml" tabIndex={-1} onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} /></section>
           <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>{t('导入订阅')}</h2></div></div><label className="field-label" htmlFor="subscription-url">{t('订阅链接')}</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={busy} autoComplete="off" spellCheck={false} placeholder={t('粘贴 HTTP / HTTPS 订阅地址')} onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={busy || !subscriptionURL} onClick={() => void importSubscription()}>{t('导入订阅')} <ArrowRight size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">{t('此地址使用 HTTP，访问令牌会在网络上传输明文。')}</small>}</section>
         </div>
+      </>}
+      {page === 'logs' && <>
+        <div className="page-heading"><h1>{t('日志')}</h1></div>
+        {logsError && <div className="alert" role="alert">{localizeError(language, logsError)}</div>}
+        <section className="panel page-panel logs-panel" aria-label={t('内核日志')}>
+          <div className="logs-toolbar"><label htmlFor="logs-level">{t('日志级别')}</label><select id="logs-level" value={selectedLogLevel} onChange={event => { followLogs.current = true; setSelectedLogLevel(event.target.value as LogLevel) }}>{logLevels.map(level => <option key={level.value} value={level.value}>{t(level.label)}</option>)}</select></div>
+          {logLines.length === 0 ? <div className="empty-state"><ListBullets size={42} weight="light" /><h3>{t('暂无日志')}</h3><p>{t('连接内核后，日志会显示在这里。')}</p></div>
+            : visibleLogLines.length === 0 ? <div className="empty-state"><h3>{t('没有符合当前级别的日志')}</h3></div>
+              : <div className="log-list" ref={logList} role="log" aria-live="off" onScroll={event => { const list = event.currentTarget; followLogs.current = list.scrollHeight - list.scrollTop - list.clientHeight < 32 }}>{visibleLogLines.map((entry, index) => <div className="log-entry" key={index}><span className={`log-level log-level-${entry.level}`}>{t(logLevels.find(level => level.value === entry.level)?.label ?? '其他')}</span><code>{entry.line}</code></div>)}</div>}
+        </section>
       </>}
       {page === 'settings' && <>
         <div className="page-heading"><h1>{t('设置')}</h1></div>

@@ -41,6 +41,8 @@ func (s *RuntimeService) SetLanguage(language string) (profile.Settings, error) 
 
 func (s *RuntimeService) State() mihomo.State { return s.runner.Snapshot() }
 
+func (s *RuntimeService) Logs() string { return s.runner.Logs() }
+
 func (s *RuntimeService) CoreInfo() (mihomo.CoreInfo, error) { return s.runner.CoreInfo() }
 
 func (s *RuntimeService) ImportProfile(contents string) (mihomo.State, error) {
