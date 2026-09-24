@@ -84,13 +84,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .proxy-group-expand { display: inline-flex; flex: none; align-items: center; gap: 14px; align-self: stretch; padding: 0 22px 0 12px; border: 0; background: transparent; color: #7a7d84; font-size: 12px; white-space: nowrap; }
 .proxy-group-expand svg { transition: transform .18s ease; }
 .proxy-group-expand svg.expanded { transform: rotate(180deg); }
-.proxy-node-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; border-top: 1px solid #e7e8eb; }
-.proxy-node { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 16px; min-width: 0; min-height: 94px; padding: 15px 16px; border: 1px solid transparent; border-radius: 11px; background: #fff; color: #24272d; text-align: left; }
+.proxy-node-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; padding: 12px; border-top: 1px solid #e7e8eb; }
+.proxy-node { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 9px; min-width: 0; min-height: 76px; padding: 11px 12px; border: 1px solid transparent; border-radius: 9px; background: #fff; color: #24272d; text-align: left; }
 .proxy-node:hover:not(:disabled) { border-color: #ffb6c5; background: #fff8f9; }
 .proxy-node.selected { border-color: #ff9dad; background: #fff0f2; box-shadow: inset 3px 0 #f31645; }
-.proxy-node strong { max-width: 100%; font-size: 14px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
-.proxy-node-meta { display: flex; flex-wrap: wrap; gap: 6px; }
-.proxy-node-meta > span { padding: 3px 7px; border: 1px solid #dfe1e5; border-radius: 6px; color: #62666d; font-size: 11px; }
+.proxy-node strong { max-width: 100%; font-size: 13px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
+.proxy-node-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+.proxy-node-meta > span { padding: 2px 6px; border: 1px solid #dfe1e5; border-radius: 6px; color: #62666d; font-size: 10px; }
 .proxy-node-meta .proxy-node-delay.measured { border-color: #ccebdc; color: #25885e; }
 .proxy-node-meta .proxy-node-delay.testing { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 65px; height: 23px; padding: 3px 5px; border-color: #ccebdc; background: #eaf8f0; color: #25885e; white-space: nowrap; }
 .delay-dots { display: inline-flex; align-items: center; gap: 2px; }
