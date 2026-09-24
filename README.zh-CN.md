@@ -19,7 +19,7 @@ Vela 是基于 Wails v3、React 和 mihomo 构建的 macOS 代理客户端。它
 ```sh
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
 wails3 package
-open bin/vela.app
+open bin/Vela.app
 ```
 
 开发运行使用 `wails3 dev`。

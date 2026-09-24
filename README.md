@@ -19,7 +19,7 @@ Requires macOS on Apple Silicon, Go 1.25+, Node.js 24, npm, Xcode Command Line T
 ```sh
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
 wails3 package
-open bin/vela.app
+open bin/Vela.app
 ```
 
 For development, run `wails3 dev`.

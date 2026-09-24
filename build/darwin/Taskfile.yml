@@ -6,6 +6,8 @@ includes:
 vars:
   # Docker image for cross-compilation (used when building on non-macOS)
   CROSS_IMAGE: wails-cross
+  # Finder shows the bundle filename; keep the internal executable as "vela".
+  APP_BUNDLE_NAME: Vela
 
 tasks:
   build:
@@ -174,7 +176,7 @@ tasks:
     platforms: [darwin]
     cmds:
       - >-
-        wails3 tool package --format dmg --name "{{.APP_NAME}}" --out "{{.BIN_DIR}}"
+        wails3 tool package --format dmg --name "{{.APP_BUNDLE_NAME}}" --out "{{.BIN_DIR}}"
         --background "{{.DMG_BACKGROUND}}"
         --volume-icon "{{.DMG_VOLUME_ICON}}"
         --file-icon "{{.DMG_FILE_ICON}}"
@@ -193,27 +195,27 @@ tasks:
   create:app:bundle:
     summary: Creates an `.app` bundle
     cmds:
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
-      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
-      - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo"
-      - cp build/resources/vela-tun-service "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service"
-      - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Country.mmdb"
-      - rm -rf "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses"
-      - cp LICENSE "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses/Vela-MIT.txt"
-      - cp build/darwin/GPL-3.0.txt "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses/GPL-3.0.txt"
-      - cp "frontend/Inter Font License.txt" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Licenses/Inter-OFL-1.1.txt"
-      - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
-      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
-      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources"
+      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources"
+      - cp build/resources/mihomo "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/mihomo"
+      - cp build/resources/vela-tun-service "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/vela-tun-service"
+      - cp build/resources/Country.mmdb "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Country.mmdb"
+      - rm -rf "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Licenses"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Licenses"
+      - cp LICENSE "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Licenses/Vela-MIT.txt"
+      - cp build/darwin/GPL-3.0.txt "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Licenses/GPL-3.0.txt"
+      - cp "frontend/Inter Font License.txt" "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Licenses/Inter-OFL-1.1.txt"
+      - rm -f "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/Assets.car"
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/MacOS"
+      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents"
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
 
   codesign:adhoc:
     summary: Ad-hoc signs the app bundle (macOS only)
     internal: true
     cmds:
-      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app"
 
   codesign:skip:
     summary: Skips codesigning when cross-compiling
@@ -248,9 +250,9 @@ tasks:
     deps:
       - task: package
     cmds:
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo" --hardened-runtime {{.CLI_ARGS}}
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service" --hardened-runtime {{.CLI_ARGS}}
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app" {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/mihomo" --hardened-runtime {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/vela-tun-service" --hardened-runtime {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app" {{.CLI_ARGS}}
 
   sign:notarize:
     summary: Signs and notarizes the application bundle
@@ -263,6 +265,6 @@ tasks:
     deps:
       - task: package
     cmds:
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/mihomo" --hardened-runtime {{.CLI_ARGS}}
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vela-tun-service" --hardened-runtime {{.CLI_ARGS}}
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app" --notarize {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/mihomo" --hardened-runtime {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app/Contents/Resources/vela-tun-service" --hardened-runtime {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}.app" --notarize {{.CLI_ARGS}}
