@@ -458,7 +458,6 @@ export default function App() {
           </section>
         </div>
       </>}
-      <footer>{t('关闭窗口后 Vela 会留在菜单栏；退出应用时关闭连接并恢复系统代理设置。')}</footer>
     </main>
   </div>
 }

@@ -118,7 +118,6 @@ const english: Record<string, string> = {
   '读取中…': 'Loading…',
   '配置目录': 'Profile directory',
   '打开目录': 'Open folder',
-  '关闭窗口后 Vela 会留在菜单栏；退出应用时关闭连接并恢复系统代理设置。': 'Closing the window keeps Vela in the menu bar. Quitting disconnects and restores system proxy settings.',
   '语言': 'Language',
   '界面语言': 'Interface language',
   '切换后立即生效': 'Changes take effect immediately',
