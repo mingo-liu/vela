@@ -7,7 +7,7 @@ import (
 	"os/exec"
 )
 
-func NewTunLauncher(_, _ string) func(configPath, stopPath string) (*exec.Cmd, error) {
+func NewTunLauncher(_, _ string, _ func() string) func(configPath, stopPath string) (*exec.Cmd, error) {
 	return nil
 }
 

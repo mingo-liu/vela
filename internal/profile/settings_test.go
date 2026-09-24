@@ -32,7 +32,7 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, err := store.Settings()
-	if err != nil || settings.MixedPort != DefaultMixedPort || settings.RoutingMode != RoutingGlobal || settings.AutoConnect || settings.AutoConnectMode != "system" || settings.LogLevel != LogFromProfile {
+	if err != nil || settings.MixedPort != DefaultMixedPort || settings.RoutingMode != RoutingGlobal || settings.AutoConnect || settings.AutoConnectMode != "system" || settings.LogLevel != LogFromProfile || settings.Language != LanguageChinese {
 		t.Fatalf("legacy settings = %+v, %v", settings, err)
 	}
 	settings, err = store.UpdateSettings(func(value *Settings) error {
@@ -40,6 +40,7 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 		value.AutoConnectMode = "tun"
 		value.LogLevel = "debug"
 		value.MixedPort = 8900
+		value.Language = LanguageEnglish
 		return nil
 	})
 	if err != nil || !settings.AutoConnect {
@@ -49,7 +50,7 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, err = NewStore(dir).Settings()
-	if err != nil || settings.MixedPort != 8900 || settings.RoutingMode != RoutingDirect || !settings.AutoConnect || settings.AutoConnectMode != "tun" || settings.LogLevel != "debug" {
+	if err != nil || settings.MixedPort != 8900 || settings.RoutingMode != RoutingDirect || !settings.AutoConnect || settings.AutoConnectMode != "tun" || settings.LogLevel != "debug" || settings.Language != LanguageEnglish {
 		t.Fatalf("reloaded settings = %+v, %v", settings, err)
 	}
 	if _, err := store.UpdateSettings(func(value *Settings) error { value.LogLevel = "verbose"; return nil }); err == nil {
@@ -63,5 +64,12 @@ func TestSettingsMigrateAndPreserveOtherOptions(t *testing.T) {
 		if _, err := store.UpdateSettings(func(value *Settings) error { value.MixedPort = port; return nil }); err == nil {
 			t.Fatalf("invalid port %d accepted", port)
 		}
+	}
+	if _, err := store.UpdateSettings(func(value *Settings) error { value.Language = "fr-FR"; return nil }); err == nil {
+		t.Fatal("unsupported language accepted")
+	}
+	settings, err = store.Settings()
+	if err != nil || settings.Language != LanguageEnglish {
+		t.Fatalf("invalid language changed settings = %+v, %v", settings, err)
 	}
 }

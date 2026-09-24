@@ -25,8 +25,10 @@ func Run(assets fs.FS) error {
 	}
 	store := profile.NewStore(dataDir)
 	initialPort := profile.DefaultMixedPort
+	language := profile.LanguageChinese
 	if settings, err := store.Settings(); err == nil {
 		initialPort = settings.MixedPort
+		language = settings.Language
 	}
 	subs := profile.NewSubscriptions(store, profile.NewFileURLStore(dataDir, macos.SubscriptionKeychain{}))
 	binary := findBinary()
@@ -44,9 +46,20 @@ func Run(assets fs.FS) error {
 		}
 	})
 	if runtime.GOOS == "darwin" {
-		runner.SetTunLauncher(macos.NewTunLauncher(binary, dataDir))
+		runner.SetTunLauncher(macos.NewTunLauncher(binary, dataDir, func() string {
+			settings, err := store.Settings()
+			if err != nil {
+				return profile.LanguageChinese
+			}
+			return settings.Language
+		}))
 	}
-	service := desktop.NewRuntimeService(runner, store, dataDir)
+	var updateMenuLanguage func(string)
+	service := desktop.NewRuntimeService(runner, store, dataDir, func(language string) {
+		if updateMenuLanguage != nil {
+			updateMenuLanguage(language)
+		}
+	})
 	wails = application.New(application.Options{
 		Name:        "Vela",
 		Description: "Vela local proxy",
@@ -66,28 +79,38 @@ func Run(assets fs.FS) error {
 	tray := wails.SystemTray.New()
 	tray.SetLabel("Vela")
 	menu := wails.NewMenu()
-	menu.Add("打开 Vela").OnClick(func(_ *application.Context) { window.Show(); window.Focus() })
-	menu.Add("设置…").OnClick(func(_ *application.Context) {
+	openItem := menu.Add(translateMenu(language, "打开 Vela", "Open Vela"))
+	openItem.OnClick(func(_ *application.Context) { window.Show(); window.Focus() })
+	settingsItem := menu.Add(translateMenu(language, "设置…", "Settings…"))
+	settingsItem.OnClick(func(_ *application.Context) {
 		window.Show()
 		window.Focus()
 		wails.Event.Emit("open-settings")
 	})
 	menu.AddSeparator()
-	systemProxyMenuItem = menu.AddCheckbox("系统代理", false)
+	systemProxyMenuItem = menu.AddCheckbox(translateMenu(language, "系统代理", "System Proxy"), false)
 	systemProxyMenuItem.OnClick(func(_ *application.Context) {
 		state, _ := runner.SetSystemProxy(!runner.Snapshot().SystemProxyEnabled)
 		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
 		tunMenuItem.SetChecked(state.TunEnabled)
 	})
-	tunMenuItem = menu.AddCheckbox("Tun 模式", false)
+	tunMenuItem = menu.AddCheckbox(translateMenu(language, "Tun 模式", "Tun Mode"), false)
 	tunMenuItem.OnClick(func(_ *application.Context) {
 		state, _ := runner.SetTun(!runner.Snapshot().TunEnabled)
 		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
 		tunMenuItem.SetChecked(state.TunEnabled)
 	})
 	menu.AddSeparator()
-	menu.Add("退出 Vela").OnClick(func(_ *application.Context) { wails.Quit() })
+	quitItem := menu.Add(translateMenu(language, "退出 Vela", "Quit Vela"))
+	quitItem.OnClick(func(_ *application.Context) { wails.Quit() })
 	tray.SetMenu(menu)
+	updateMenuLanguage = func(language string) {
+		openItem.SetLabel(translateMenu(language, "打开 Vela", "Open Vela"))
+		settingsItem.SetLabel(translateMenu(language, "设置…", "Settings…"))
+		systemProxyMenuItem.SetLabel(translateMenu(language, "系统代理", "System Proxy"))
+		tunMenuItem.SetLabel(translateMenu(language, "Tun 模式", "Tun Mode"))
+		quitItem.SetLabel(translateMenu(language, "退出 Vela", "Quit Vela"))
+	}
 	go func() {
 		for range menuStateUpdates {
 			state := runner.Snapshot()
@@ -105,6 +128,13 @@ func Run(assets fs.FS) error {
 		}()
 	}
 	return wails.Run()
+}
+
+func translateMenu(language, chinese, english string) string {
+	if language == profile.LanguageEnglish {
+		return english
+	}
+	return chinese
 }
 
 func findBinary() string {

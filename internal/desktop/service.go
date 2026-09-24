@@ -14,14 +14,29 @@ import (
 // RuntimeService is the Wails boundary for Vela's connection modes.
 // It exposes no controller secret or raw controller URL.
 type RuntimeService struct {
-	runner     *mihomo.Runner
-	store      *profile.Store
-	dataDir    string
-	settingsMu sync.Mutex
+	runner           *mihomo.Runner
+	store            *profile.Store
+	dataDir          string
+	settingsMu       sync.Mutex
+	onLanguageChange func(string)
 }
 
-func NewRuntimeService(runner *mihomo.Runner, store *profile.Store, dataDir string) *RuntimeService {
-	return &RuntimeService{runner: runner, store: store, dataDir: dataDir}
+func NewRuntimeService(runner *mihomo.Runner, store *profile.Store, dataDir string, onLanguageChange func(string)) *RuntimeService {
+	return &RuntimeService{runner: runner, store: store, dataDir: dataDir, onLanguageChange: onLanguageChange}
+}
+
+func (s *RuntimeService) SetLanguage(language string) (profile.Settings, error) {
+	if !profile.ValidLanguage(language) {
+		return profile.Settings{}, errors.New("无效的界面语言")
+	}
+	settings, err := s.store.UpdateSettings(func(settings *profile.Settings) error {
+		settings.Language = language
+		return nil
+	})
+	if err == nil && s.onLanguageChange != nil {
+		s.onLanguageChange(language)
+	}
+	return settings, err
 }
 
 func (s *RuntimeService) State() mihomo.State { return s.runner.Snapshot() }

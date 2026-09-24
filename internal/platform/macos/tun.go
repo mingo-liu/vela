@@ -27,7 +27,7 @@ const tunServiceID = "local.vela.desktop.tun"
 const tunServicePlist = "/Library/LaunchDaemons/" + tunServiceID + ".plist"
 
 // NewTunLauncher installs the standalone service and approved core when they change.
-func NewTunLauncher(binary, dataDir string) func(configPath, stopPath string) (*exec.Cmd, error) {
+func NewTunLauncher(binary, dataDir string, language func() string) func(configPath, stopPath string) (*exec.Cmd, error) {
 	return func(configPath, stopPath string) (*exec.Cmd, error) {
 		self, err := os.Executable()
 		if err != nil {
@@ -45,7 +45,7 @@ func NewTunLauncher(binary, dataDir string) func(configPath, stopPath string) (*
 		if err != nil {
 			return nil, err
 		}
-		if err := ensureTunService(service, absBinary); err != nil {
+		if err := ensureTunService(service, absBinary, language()); err != nil {
 			return nil, err
 		}
 		return exec.Command(self, "--vela-tun-client", dataDir, configPath, stopPath), nil
@@ -93,7 +93,7 @@ func installedCopyMatches(source, target string) bool {
 	return info.Mode()&os.ModeSetuid == 0
 }
 
-func ensureTunService(service, binary string) error {
+func ensureTunService(service, binary, language string) error {
 	helper := filepath.Join(tunInstallDir, "service")
 	core := filepath.Join(tunInstallDir, "mihomo")
 	ownerFile := filepath.Join(tunInstallDir, "owner-uid")
@@ -133,7 +133,11 @@ func ensureTunService(service, binary string) error {
 		"/bin/chmod 0644 " + shellQuote(tunServicePlist),
 		"/bin/launchctl bootstrap system " + shellQuote(tunServicePlist),
 	}, "; ")
-	script := "do shell script " + strconv.Quote(command) + " with administrator privileges with prompt \"Vela Tun 需要安装系统服务\""
+	prompt := "Vela Tun 需要安装系统服务"
+	if language == profile.LanguageEnglish {
+		prompt = "Vela Tun needs to install a system service"
+	}
+	script := "do shell script " + strconv.Quote(command) + " with administrator privileges with prompt " + strconv.Quote(prompt)
 	output, err := exec.Command("/usr/bin/osascript", "-e", script).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("安装 Tun 辅助程序失败: %w；%s", err, strings.TrimSpace(string(output)))

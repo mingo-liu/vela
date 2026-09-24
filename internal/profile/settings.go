@@ -14,6 +14,8 @@ const (
 	RoutingDirect    = "direct"
 	LogFromProfile   = "profile"
 	DefaultMixedPort = 7890
+	LanguageChinese  = "zh-CN"
+	LanguageEnglish  = "en-US"
 )
 
 type Settings struct {
@@ -23,10 +25,15 @@ type Settings struct {
 	AutoConnectMode string `json:"autoConnectMode"`
 	LogLevel        string `json:"logLevel"`
 	LaunchAtLogin   bool   `json:"launchAtLogin"`
+	Language        string `json:"language"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{MixedPort: DefaultMixedPort, RoutingMode: RoutingRule, AutoConnectMode: "system", LogLevel: LogFromProfile}
+	return Settings{MixedPort: DefaultMixedPort, RoutingMode: RoutingRule, AutoConnectMode: "system", LogLevel: LogFromProfile, Language: LanguageChinese}
+}
+
+func ValidLanguage(language string) bool {
+	return language == LanguageChinese || language == LanguageEnglish
 }
 
 func ValidMixedPort(port int) bool { return port >= 1024 && port <= 65535 }
@@ -46,7 +53,7 @@ func ValidLogLevel(level string) bool {
 func validSettings(settings Settings) bool {
 	return ValidMixedPort(settings.MixedPort) && ValidRoutingMode(settings.RoutingMode) &&
 		(settings.AutoConnectMode == "system" || settings.AutoConnectMode == "tun") &&
-		ValidLogLevel(settings.LogLevel)
+		ValidLogLevel(settings.LogLevel) && ValidLanguage(settings.Language)
 }
 
 func (s *Store) settingsPath() string {
