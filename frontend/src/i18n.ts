@@ -166,7 +166,6 @@ const englishErrors: Record<string, string> = {
   '读取内核版本失败': 'Could not read core version',
   '无法识别内核名称和版本号': 'Could not identify core name and version',
   '请先停止内核再导入新配置': 'Stop the core before importing a new profile',
-  '请先停止内核再更新订阅': 'Stop the core before updating a subscription',
   '内核正在切换状态，请稍后重试': 'Core is changing state; try again shortly',
   '切换订阅时重载内核配置失败': 'Could not reload core configuration while switching subscription',
   '切换订阅后内核未就绪': 'Core was not ready after switching subscription',

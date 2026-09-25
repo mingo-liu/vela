@@ -251,6 +251,44 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 	return nil
 }
 
+// UpdateWithApply restores the saved subscription and active profile if applying
+// the new configuration to a running core fails.
+func (s *Subscriptions) UpdateWithApply(ctx context.Context, id string, apply func() error) error {
+	_, previousCatalog, err := s.catalog()
+	if err != nil {
+		return err
+	}
+	previousProfile, err := s.profiles.Load()
+	if err != nil {
+		return err
+	}
+	previousCache, err := s.profiles.LoadSubscription(id)
+	cacheExists := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := s.Update(ctx, id); err != nil {
+		return err
+	}
+	if err := apply(); err != nil {
+		var cacheErr error
+		if cacheExists {
+			cacheErr = s.profiles.SaveSubscription(id, string(previousCache))
+		} else {
+			cacheErr = s.profiles.DeleteSubscription(id)
+		}
+		profileErr := s.profiles.Import(string(previousProfile))
+		var catalogErr error
+		if previousCatalog == "" {
+			catalogErr = s.urls.Delete()
+		} else {
+			catalogErr = s.urls.Put(previousCatalog)
+		}
+		return errors.Join(err, cacheErr, profileErr, catalogErr)
+	}
+	return nil
+}
+
 func (s *Subscriptions) Select(ctx context.Context, id string) error {
 	catalog, raw, err := s.catalog()
 	if err != nil {

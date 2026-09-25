@@ -176,10 +176,29 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cmd != nil {
-		return r.state, errors.New("请先停止内核再更新订阅")
+	if r.cmd != nil && r.state.Status != "running" {
+		return r.state, errors.New("内核正在切换状态，请稍后重试")
 	}
-	if err := r.subs.Update(context.Background(), id); err != nil {
+	var err error
+	if r.cmd == nil {
+		err = r.subs.Update(context.Background(), id)
+	} else {
+		var previousProfile, previousConfig []byte
+		var previousSubscriptions []profile.Subscription
+		previousProfile, err = r.store.Load()
+		if err == nil {
+			previousConfig, err = r.compile(previousProfile, r.apiPort, r.state.TunEnabled)
+		}
+		if err == nil {
+			previousSubscriptions, err = r.subs.List()
+		}
+		if err == nil {
+			err = r.subs.UpdateWithApply(context.Background(), id, func() error {
+				return r.reloadSelectedProfile(previousProfile, previousConfig, previousSubscriptions)
+			})
+		}
+	}
+	if err != nil {
 		return r.state, err
 	}
 	r.state.HasProfile, r.state.Error = true, ""

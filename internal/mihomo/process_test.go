@@ -428,6 +428,128 @@ func TestSelectSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	}
 }
 
+func TestUpdateSubscriptionWhileSystemProxyEnabled(t *testing.T) {
+	config := func(name, option string) string {
+		return "proxy-groups:\n  - name: " + name + "\n    type: select\n    proxies: [" + option + "]\nrules: [MATCH,DIRECT]\n"
+	}
+	one := config("One", "DIRECT")
+	two := config("Two", "REJECT")
+	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/one" {
+			_, _ = w.Write([]byte(one))
+		} else {
+			_, _ = w.Write([]byte(two))
+		}
+	}))
+	defer subscriptionServer.Close()
+
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	subs := profile.NewSubscriptions(store, &testURLStore{})
+	runner := NewRunner(store, subs, dir, "", 0, &testSystemProxy{enabled: true}, nil)
+	for _, path := range []string{"/one", "/two"} {
+		if _, err := runner.ImportSubscription(subscriptionServer.URL + path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := subs.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.SelectSubscription(list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	mixedListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mixedListener.Close()
+	var loadedConfig string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/configs" && r.Method == http.MethodPut {
+			var request struct {
+				Payload string `json:"payload"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if strings.Contains(request.Payload, "name: Bad") {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			loadedConfig = request.Payload
+		}
+	}))
+	defer api.Close()
+	apiURL, err := url.Parse(api.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.apiPort, err = strconv.Atoi(apiURL.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.state.Port = mixedListener.Addr().(*net.TCPAddr).Port
+	runner.state.Status = "running"
+	runner.state.SystemProxyEnabled = true
+	runner.cmd = &exec.Cmd{}
+	runner.done = make(chan struct{})
+	runner.secret = "test-secret"
+
+	two = config("Updated", "DIRECT")
+	state, err := runner.UpdateSubscription(list[1].ID)
+	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Updated") {
+		t.Fatalf("online update did not reload the profile: %+v, %v, %q", state, err, loadedConfig)
+	}
+	list, err = subs.List()
+	if err != nil || list[0].Active || !list[1].Active {
+		t.Fatalf("online update did not select the subscription: %+v, %v", list, err)
+	}
+	two = config("Refreshed", "REJECT")
+	state, err = runner.UpdateSubscription(list[1].ID)
+	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Refreshed") {
+		t.Fatalf("active subscription update did not reload the profile: %+v, %v, %q", state, err, loadedConfig)
+	}
+	previousUpdatedAt := *list[0].UpdatedAt
+	one = config("Bad", "DIRECT")
+	state, err = runner.UpdateSubscription(list[0].ID)
+	if err == nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Refreshed") {
+		t.Fatalf("failed update changed the connection: %+v, %v, %q", state, err, loadedConfig)
+	}
+	list, err = subs.List()
+	if err != nil || list[0].Active || !list[1].Active || !list[0].UpdatedAt.Equal(previousUpdatedAt) {
+		t.Fatalf("failed update changed subscriptions: %+v, %v", list, err)
+	}
+	cached, err := store.LoadSubscription(list[0].ID)
+	if err != nil || string(cached) != config("One", "DIRECT") {
+		t.Fatalf("failed update changed cached profile: %q, %v", cached, err)
+	}
+	active, err := store.Load()
+	if err != nil || string(active) != two {
+		t.Fatalf("failed update changed active profile: %q, %v", active, err)
+	}
+	previousUpdatedAt = *list[1].UpdatedAt
+	two = config("Bad", "DIRECT")
+	state, err = runner.UpdateSubscription(list[1].ID)
+	if err == nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Refreshed") {
+		t.Fatalf("failed active update changed the connection: %+v, %v, %q", state, err, loadedConfig)
+	}
+	list, err = subs.List()
+	if err != nil || !list[1].Active || !list[1].UpdatedAt.Equal(previousUpdatedAt) {
+		t.Fatalf("failed active update changed subscriptions: %+v, %v", list, err)
+	}
+	active, err = store.Load()
+	if err != nil || string(active) != config("Refreshed", "REJECT") {
+		t.Fatalf("failed active update changed active profile: %q, %v", active, err)
+	}
+	cached, err = store.LoadSubscription(list[1].ID)
+	if err != nil || string(cached) != config("Refreshed", "REJECT") {
+		t.Fatalf("failed active update changed cached profile: %q, %v", cached, err)
+	}
+}
+
 func TestImportSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	binary := os.Getenv("VELA_TEST_MIHOMO")
 	if binary == "" {

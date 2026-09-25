@@ -403,7 +403,7 @@ export default function App() {
                 const domain = subscriptionDomain(subscription.url, language)
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
-                    <button className="subscription-refresh" type="button" disabled={busy || running} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={busy} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                   </div>
                   <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={busy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
                     <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
