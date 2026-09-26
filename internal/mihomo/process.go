@@ -38,6 +38,12 @@ type CoreInfo struct {
 	Version string `json:"version"`
 }
 
+type TrafficTotals struct {
+	Upload    int64  `json:"uploadTotal"`
+	Download  int64  `json:"downloadTotal"`
+	Interface string `json:"interface"`
+}
+
 type SystemProxy interface {
 	Enable(port int) error
 	Disable() error
@@ -111,6 +117,19 @@ func (r *Runner) Logs() string {
 	logs := r.logs
 	r.mu.Unlock()
 	return logs.String()
+}
+
+func (r *Runner) TrafficTotals() (TrafficTotals, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.Status != "running" {
+		return TrafficTotals{}, nil
+	}
+	var totals TrafficTotals
+	if err := r.request(http.MethodGet, "/connections", nil, &totals); err != nil {
+		return TrafficTotals{}, err
+	}
+	return totals, nil
 }
 
 func (r *Runner) CoreInfo() (CoreInfo, error) {

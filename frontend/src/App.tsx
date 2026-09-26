@@ -7,6 +7,7 @@ import type { CoreInfo, Group, State } from '../bindings/github.com/mingo-liu/ve
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import type { Settings } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import { translate, localizeError, type Language } from './i18n'
+import TrafficMonitor from './TrafficMonitor'
 
 type Page = 'home' | 'proxies' | 'profiles' | 'logs' | 'settings'
 type SortMode = 'name' | 'delay'
@@ -328,6 +329,7 @@ export default function App() {
       <nav className="navigation" aria-label={t('页面')}>
         {navigation.map(item => <button key={item.id} type="button" className={`nav-item${page === item.id ? ' active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><item.icon size={25} weight="regular" /><span>{t(item.label)}</span></button>)}
       </nav>
+      <TrafficMonitor language={language} />
       <div className="sidebar-footer"><span className={`sidebar-dot${connected ? ' connected' : ''}`} /><div><strong>{connected ? t('已连接') : t('未连接')}</strong></div></div>
     </aside>
 

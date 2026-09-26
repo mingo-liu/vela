@@ -43,6 +43,14 @@ func (s *RuntimeService) State() mihomo.State { return s.runner.Snapshot() }
 
 func (s *RuntimeService) Logs() string { return s.runner.Logs() }
 
+func (s *RuntimeService) TrafficTotals() (mihomo.TrafficTotals, error) {
+	if runtime.GOOS == "darwin" {
+		traffic, err := macos.TrafficTotals()
+		return mihomo.TrafficTotals{Upload: traffic.Upload, Download: traffic.Download, Interface: traffic.Interface}, err
+	}
+	return s.runner.TrafficTotals()
+}
+
 func (s *RuntimeService) CoreInfo() (mihomo.CoreInfo, error) { return s.runner.CoreInfo() }
 
 func (s *RuntimeService) ImportProfile(contents string) (mihomo.State, error) {

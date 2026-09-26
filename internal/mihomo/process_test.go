@@ -659,6 +659,36 @@ func TestGroupsAvailableBeforeCoreStarts(t *testing.T) {
 	}
 }
 
+func TestTrafficTotalsReadsAuthenticatedController(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodGet || r.URL.Path != "/connections" || r.Header.Get("Authorization") != "Bearer test-secret" {
+			t.Errorf("unexpected traffic request: %s %s", r.Method, r.URL)
+		}
+		_, _ = w.Write([]byte(`{"uploadTotal":1234,"downloadTotal":5678,"connections":[]}`))
+	}))
+	defer server.Close()
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(profile.NewStore(t.TempDir()), nil, "", "", 7890, nil, nil)
+	runner.apiPort = port
+	runner.secret = "test-secret"
+	if totals, err := runner.TrafficTotals(); err != nil || totals != (TrafficTotals{}) || requests != 0 {
+		t.Fatalf("stopped traffic: %+v, %v, requests=%d", totals, err, requests)
+	}
+	runner.state.Status = "running"
+	if totals, err := runner.TrafficTotals(); err != nil || totals.Upload != 1234 || totals.Download != 5678 || requests != 1 {
+		t.Fatalf("running traffic: %+v, %v, requests=%d", totals, err, requests)
+	}
+}
+
 func TestGroupDelayTestsEachOption(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-secret" {

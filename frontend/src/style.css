@@ -7,7 +7,7 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #ff4965; outline-offset: 3px; }
 
 .app-layout { display: flex; min-height: 100vh; }
-.sidebar { width: clamp(225px, 27vw, 500px); flex: 0 0 clamp(225px, 27vw, 500px); display: flex; flex-direction: column; padding: 28px 15px 22px; background: #f5f6f8; border-right: 1px solid #eaebee; }
+.sidebar { position: sticky; top: 0; width: clamp(225px, 27vw, 500px); height: 100vh; flex: 0 0 clamp(225px, 27vw, 500px); display: flex; flex-direction: column; padding: 28px 15px 22px; overflow-y: auto; background: #f5f6f8; border-right: 1px solid #eaebee; }
 .brand { display: flex; align-items: center; gap: 13px; padding: 3px 14px 32px; }
 .brand-icon { display: block; width: 42px; height: 42px; flex: none; }
 .brand strong { display: block; font-size: 23px; letter-spacing: -.045em; }
@@ -16,7 +16,20 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .nav-item svg { flex: none; color: #f31645; }
 .nav-item:hover { background: #e9eaed; }
 .nav-item.active { background: #e1e3e7; color: #101216; font-weight: 700; }
-.sidebar-footer { display: flex; align-items: center; gap: 11px; margin: auto 12px 0; padding-top: 20px; border-top: 1px solid #e3e5e9; }
+.sidebar-traffic { min-width: 0; margin: auto 12px 0; }
+.traffic-chart { display: block; width: 100%; height: 66px; margin-bottom: 10px; overflow: visible; }
+.traffic-guide { fill: none; stroke: #e0e2e6; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.traffic-upload-line, .traffic-download-line { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.traffic-upload-line { stroke: #ffa88c; }
+.traffic-download-line { stroke: #087cff; }
+.traffic-rate { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; font-variant-numeric: tabular-nums; }
+.traffic-rate + .traffic-rate { margin-top: 8px; }
+.traffic-rate svg { color: #b0b4ba; }
+.traffic-rate-upload .traffic-value { color: #ff9877; }
+.traffic-rate-download .traffic-value { color: #087cff; }
+.traffic-value { min-width: 0; font-size: clamp(15px, 1.6vw, 21px); font-weight: 400; line-height: 1.15; white-space: nowrap; }
+.traffic-unit { color: #171a20; font-size: clamp(12px, 1.2vw, 15px); white-space: nowrap; }
+.sidebar-footer { display: flex; align-items: center; gap: 11px; margin: 17px 12px 0; padding-top: 17px; border-top: 1px solid #e3e5e9; }
 .sidebar-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #aeb2ba; }
 .sidebar-dot.connected { background: #25ac70; }
 .sidebar-footer strong { display: block; font-size: 13px; }
@@ -204,7 +217,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   body { min-width: 0; }
   .sidebar { width: 68px; flex-basis: 68px; padding: 20px 8px; }
   .brand { padding: 2px 4px 25px; }
-  .brand > div:last-child, .nav-item span, .sidebar-footer { display: none; }
+  .brand > div:last-child, .nav-item span, .sidebar-traffic, .sidebar-footer { display: none; }
   .nav-item { justify-content: center; padding: 0; }
   .content { padding: 30px 19px 20px; }
   .module-grid { grid-template-columns: 1fr; }
