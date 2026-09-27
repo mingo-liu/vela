@@ -158,7 +158,7 @@ const englishErrors: Record<string, string> = {
   '首版暂不支持': 'This version does not support',
   '请使用内联节点与规则': 'use inline nodes and rules',
   'DNS 配置必须是对象': 'DNS configuration must be an object',
-  '首版不支持配置 DNS 监听端口': 'This version does not support a DNS listen port',
+  'rule-providers 必须是对象': 'rule-providers must be a mapping',
   '首版尚未打包规则资源': 'Rule resource is not bundled in this version',
   '首版不支持 YAML 别名': 'This version does not support YAML aliases',
   '重复的 YAML 字段': 'Duplicate YAML field',

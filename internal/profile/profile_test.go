@@ -51,7 +51,7 @@ func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 		"listeners:\n  - name: open\n    type: mixed\n    port: 9000\n",
 		"proxy-providers:\n  remote:\n    type: file\n    path: /tmp/private\n",
 		"rules:\n  - GEOSITE,CN,DIRECT\n",
-		"dns:\n  listen: 0.0.0.0:53\n",
+		"rule-providers: [reject]\n",
 		"port: 1\nport: 2\n",
 		"proxies: &nodes [DIRECT]\nproxy-groups: *nodes\n",
 	}
@@ -59,6 +59,35 @@ func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 		if _, err := Compile([]byte(source), 7890, 9090, "secret"); err == nil {
 			t.Errorf("accepted unsafe config: %q", source)
 		}
+	}
+}
+
+func TestCompileAcceptsRuleProviders(t *testing.T) {
+	source := `udp: true
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+rule-providers:
+  gfw:
+    type: http
+    behavior: domain
+    url: https://example.com/gfw.txt
+    path: ./ruleset/gfw.yaml
+    interval: 86400
+rules:
+  - RULE-SET,gfw,DIRECT
+  - MATCH,DIRECT
+`
+	compiled, err := Compile([]byte(source), 7890, 9090, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(compiled)
+	if !strings.Contains(out, "RULE-SET,gfw,DIRECT") || !strings.Contains(out, "./ruleset/gfw.yaml") || !strings.Contains(out, "udp: true") {
+		t.Fatalf("rule providers were lost: %s", out)
+	}
+	if strings.Contains(out, "listen:") {
+		t.Fatalf("dns listen was kept: %s", out)
 	}
 }
 

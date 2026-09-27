@@ -175,7 +175,7 @@ func (s *Store) NodeNames() ([]string, error) {
 }
 
 // Compile preserves compatible user settings while taking ownership of every
-// inbound and controller setting. This first slice accepts inline resources only.
+// inbound and controller setting.
 func Compile(data []byte, mixedPort, controllerPort int, secret string) ([]byte, error) {
 	return CompileForMode(data, mixedPort, controllerPort, secret, false, RoutingRule)
 }
@@ -215,8 +215,8 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 		return nil, err
 	}
 	allowed := map[string]bool{
-		"proxies": true, "proxy-groups": true, "rules": true,
-		"hosts": true, "dns": true, "ipv6": true, "log-level": true,
+		"proxies": true, "proxy-groups": true, "rules": true, "rule-providers": true,
+		"hosts": true, "dns": true, "ipv6": true, "udp": true, "log-level": true,
 		"unified-delay": true, "tcp-concurrent": true,
 	}
 	managed := map[string]bool{}
@@ -228,7 +228,7 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 	} {
 		managed[key] = true
 	}
-	for _, key := range []string{"listeners", "proxy-providers", "rule-providers", "script", "sniffer"} {
+	for _, key := range []string{"listeners", "proxy-providers", "script", "sniffer"} {
 		if value := lookup(root, key); value != nil && !isEmpty(value) {
 			return nil, fmt.Errorf("首版暂不支持 %s，请使用内联节点与规则", key)
 		}
@@ -242,16 +242,18 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 	if dns := lookup(root, "dns"); dns != nil && !isEmpty(dns) && dns.Kind != yaml.MappingNode {
 		return nil, errors.New("DNS 配置必须是对象")
 	}
+	if providers := lookup(root, "rule-providers"); providers != nil && !isEmpty(providers) && providers.Kind != yaml.MappingNode {
+		return nil, errors.New("rule-providers 必须是对象")
+	}
 	if dns := lookup(root, "dns"); dns != nil && dns.Kind == yaml.MappingNode {
-		if listen := lookup(dns, "listen"); listen != nil && listen.Value != "" && listen.Value != "0" {
-			return nil, errors.New("首版不支持配置 DNS 监听端口")
-		}
+		// Vela 不对外开放 DNS 端口；Tun 模式通过 dns-hijack 接管 DNS。
+		remove(dns, "listen")
 	}
 	if rules := lookup(root, "rules"); rules != nil && rules.Kind == yaml.SequenceNode {
 		for _, rule := range rules.Content {
 			if rule.Kind == yaml.ScalarNode {
 				upper := strings.ToUpper(strings.TrimSpace(rule.Value))
-				for _, prefix := range []string{"GEOSITE,", "RULE-SET,", "IP-ASN,"} {
+				for _, prefix := range []string{"GEOSITE,", "IP-ASN,"} {
 					if strings.HasPrefix(upper, prefix) {
 						return nil, fmt.Errorf("首版尚未打包规则资源: %s", prefix)
 					}
