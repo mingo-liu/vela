@@ -19,13 +19,22 @@ const (
 )
 
 type Settings struct {
-	MixedPort       int    `json:"mixedPort"`
-	RoutingMode     string `json:"routingMode"`
-	AutoConnect     bool   `json:"autoConnect"`
-	AutoConnectMode string `json:"autoConnectMode"`
-	LogLevel        string `json:"logLevel"`
-	LaunchAtLogin   bool   `json:"launchAtLogin"`
-	Language        string `json:"language"`
+	MixedPort       int        `json:"mixedPort"`
+	RoutingMode     string     `json:"routingMode"`
+	AutoConnect     bool       `json:"autoConnect"`
+	AutoConnectMode string     `json:"autoConnectMode"`
+	LogLevel        string     `json:"logLevel"`
+	LaunchAtLogin   bool       `json:"launchAtLogin"`
+	Language        string     `json:"language"`
+	AutoSwitch      AutoSwitch `json:"autoSwitch"`
+}
+
+// AutoSwitch selects a node in Group according to the default route's interface type.
+type AutoSwitch struct {
+	Enabled  bool   `json:"enabled"`
+	Group    string `json:"group"`
+	Wired    string `json:"wired"`
+	Wireless string `json:"wireless"`
 }
 
 func DefaultSettings() Settings {

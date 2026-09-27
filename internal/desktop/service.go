@@ -19,10 +19,11 @@ type RuntimeService struct {
 	dataDir          string
 	settingsMu       sync.Mutex
 	onLanguageChange func(string)
+	onAutoSwitch     func()
 }
 
-func NewRuntimeService(runner *mihomo.Runner, store *profile.Store, dataDir string, onLanguageChange func(string)) *RuntimeService {
-	return &RuntimeService{runner: runner, store: store, dataDir: dataDir, onLanguageChange: onLanguageChange}
+func NewRuntimeService(runner *mihomo.Runner, store *profile.Store, dataDir string, onLanguageChange func(string), onAutoSwitch func()) *RuntimeService {
+	return &RuntimeService{runner: runner, store: store, dataDir: dataDir, onLanguageChange: onLanguageChange, onAutoSwitch: onAutoSwitch}
 }
 
 func (s *RuntimeService) SetLanguage(language string) (profile.Settings, error) {
@@ -147,6 +148,20 @@ func (s *RuntimeService) SetAutoConnectMode(mode string) (profile.Settings, erro
 		settings.AutoConnectMode = mode
 		return nil
 	})
+}
+
+func (s *RuntimeService) SetAutoSwitch(config profile.AutoSwitch) (profile.Settings, error) {
+	if config.Enabled && config.Group == "" {
+		return profile.Settings{}, errors.New("请选择要自动切换的策略组")
+	}
+	settings, err := s.store.UpdateSettings(func(settings *profile.Settings) error {
+		settings.AutoSwitch = config
+		return nil
+	})
+	if err == nil && s.onAutoSwitch != nil {
+		s.onAutoSwitch()
+	}
+	return settings, err
 }
 
 func (s *RuntimeService) SetLogLevel(level string) (profile.Settings, error) {

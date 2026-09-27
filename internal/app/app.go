@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/mingo-liu/vela/internal/desktop"
 	"github.com/mingo-liu/vela/internal/mihomo"
@@ -55,11 +56,16 @@ func Run(assets fs.FS) error {
 		}))
 	}
 	var updateMenuLanguage func(string)
+	switcher := desktop.NewAutoSwitcher(runner, store, macos.DefaultNetwork, func() {
+		if wails != nil {
+			wails.Event.Emit("groups-changed")
+		}
+	})
 	service := desktop.NewRuntimeService(runner, store, dataDir, func(language string) {
 		if updateMenuLanguage != nil {
 			updateMenuLanguage(language)
 		}
-	})
+	}, switcher.Kick)
 	wails = application.New(application.Options{
 		Name:        "Vela",
 		Description: "Vela local proxy",
@@ -121,6 +127,9 @@ func Run(assets fs.FS) error {
 		tunMenuItem.SetLabel(translateMenu(language, "Tun 模式", "Tun Mode"))
 		updateConnectionMenu(runner.Snapshot())
 		quitItem.SetLabel(translateMenu(language, "退出 Vela", "Quit Vela"))
+	}
+	if runtime.GOOS == "darwin" {
+		go switcher.Run(5 * time.Second)
 	}
 	go func() {
 		for range menuStateUpdates {

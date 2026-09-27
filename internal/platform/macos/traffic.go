@@ -20,11 +20,7 @@ type NetworkTraffic struct {
 func TrafficTotals() (NetworkTraffic, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	route, err := exec.CommandContext(ctx, "/sbin/route", "-n", "get", "default").Output()
-	if err != nil {
-		return NetworkTraffic{}, err
-	}
-	iface, err := parseDefaultInterface(string(route))
+	iface, err := defaultInterface(ctx)
 	if err != nil {
 		return NetworkTraffic{}, err
 	}
@@ -33,6 +29,14 @@ func TrafficTotals() (NetworkTraffic, error) {
 		return NetworkTraffic{}, err
 	}
 	return parseInterfaceTraffic(string(stats), iface)
+}
+
+func defaultInterface(ctx context.Context) (string, error) {
+	route, err := exec.CommandContext(ctx, "/sbin/route", "-n", "get", "default").Output()
+	if err != nil {
+		return "", err
+	}
+	return parseDefaultInterface(string(route))
 }
 
 func parseDefaultInterface(output string) (string, error) {

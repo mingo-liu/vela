@@ -5,7 +5,7 @@ import velaIcon from '../../build/appicon.png'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { CoreInfo, Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
-import type { Settings } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
+import type { AutoSwitch, Settings } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import { translate, localizeError, type Language } from './i18n'
 import TrafficMonitor from './TrafficMonitor'
 import ExitIPCard from './ExitIPCard'
@@ -49,7 +49,7 @@ function logLevel(line: string): Exclude<LogLevel, 'all'> {
   }
 }
 
-const defaultSettings: Settings = { mixedPort: 7890, routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', logLevel: 'profile', launchAtLogin: false, language: 'zh-CN' }
+const defaultSettings: Settings = { mixedPort: 7890, routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', logLevel: 'profile', launchAtLogin: false, language: 'zh-CN', autoSwitch: { enabled: false, group: '', wired: '', wireless: '' } }
 
 function formatBytes(bytes: number | null, language: Language): string {
   if (bytes === null) return translate(language, '未提供')
@@ -120,6 +120,7 @@ export default function App() {
 
   useEffect(() => Events.On('open-settings', () => setPage('settings')), [])
   useEffect(() => Events.On('open-logs', () => setPage('logs')), [])
+  useEffect(() => Events.On('groups-changed', () => { Runtime.Groups().then(value => setGroups(value ?? [])).catch(() => {}) }), [])
 
   useEffect(() => {
     if (page !== 'logs') return
@@ -236,6 +237,15 @@ export default function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  const autoSwitch = settings.autoSwitch ?? defaultSettings.autoSwitch
+  const switchGroups = groups.filter(group => group.name !== 'GLOBAL')
+  const switchOptions = switchGroups.find(group => group.name === autoSwitch.group)?.options ?? []
+  const saveAutoSwitch = (patch: Partial<AutoSwitch>) => {
+    const next = { ...autoSwitch, ...patch }
+    if (next.enabled && !next.group) next.group = switchGroups[0]?.name ?? ''
+    void updateSettings(() => Runtime.SetAutoSwitch(next))
   }
 
   const openConfigDirectory = async () => {
@@ -450,6 +460,14 @@ export default function App() {
             <h2 id="proxy-settings-title">{t('代理设置')}</h2>
             <fieldset className="settings-routing" disabled={busy}><legend>{t('代理模式')}</legend><div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}><input type="radio" name="settings-routing-mode" value={option.value} checked={state.routingMode === option.value} onChange={() => void execute(() => Runtime.SetRoutingMode(option.value))} /><span><strong>{t(option.label)}</strong><small>{t(option.description)}</small></span></label>)}</div></fieldset>
             <div className="setting-row port-setting"><label htmlFor="mixed-port"><strong>{t('本地代理端口')}</strong>{connected && <small>{t('保存后将按当前网络设置重新连接')}</small>}</label><div className="port-editor"><div className="port-field"><span className="port-address">127.0.0.1:</span><input id="mixed-port" type="number" min="1024" max="65535" step="1" inputMode="numeric" value={portDraft} disabled={busy} onChange={event => setPortDraft(event.target.value)} /></div><button className="secondary-button" type="button" disabled={busy || portDraft === String(state.port)} onClick={() => void saveMixedPort()}>{t('保存')}</button></div></div>
+          </section>
+          <section className="panel settings-card" aria-labelledby="auto-switch-title">
+            <h2 id="auto-switch-title">{t('按网络切换节点')}</h2>
+            <button className={`setting-row setting-switch${autoSwitch.enabled ? ' on' : ''}`} type="button" role="switch" aria-checked={autoSwitch.enabled} disabled={busy || (!autoSwitch.enabled && switchGroups.length === 0)} onClick={() => saveAutoSwitch({ enabled: !autoSwitch.enabled })}><span><strong>{t('自动切换节点')}</strong><small>{t('有线与无线网络切换时，自动选择对应节点')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+            {autoSwitch.enabled && <>
+              <label className="setting-row" htmlFor="auto-switch-group"><span><strong>{t('策略组')}</strong></span><select id="auto-switch-group" value={autoSwitch.group} disabled={busy} onChange={event => saveAutoSwitch({ group: event.target.value, wired: '', wireless: '' })}>{switchGroups.map(group => <option key={group.name} value={group.name}>{group.name}</option>)}</select></label>
+              {([['wired', '有线网络'], ['wireless', '无线网络']] as const).map(([key, label]) => <label className="setting-row" htmlFor={`auto-switch-${key}`} key={key}><span><strong>{t(label)}</strong></span><select id={`auto-switch-${key}`} value={autoSwitch[key]} disabled={busy} onChange={event => saveAutoSwitch({ [key]: event.target.value })}><option value="">{t('不切换')}</option>{switchOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>)}
+            </>}
           </section>
           <section className="panel settings-card" aria-labelledby="core-settings-title">
             <h2 id="core-settings-title">{t('内核')}</h2>
