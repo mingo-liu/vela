@@ -8,6 +8,7 @@ import type { Subscription } from '../bindings/github.com/mingo-liu/vela/interna
 import type { Settings } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import { translate, localizeError, type Language } from './i18n'
 import TrafficMonitor from './TrafficMonitor'
+import ExitIPCard from './ExitIPCard'
 
 type Page = 'home' | 'proxies' | 'profiles' | 'logs' | 'settings'
 type SortMode = 'name' | 'delay'
@@ -354,6 +355,7 @@ export default function App() {
           {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>{t('先导入配置以启用连接')} <ArrowRight size={17} /></button>}
           <div className="connection-meta"><div><span>{t('本地代理')}</span><strong>127.0.0.1:{state.port}</strong></div><div><span>{t('内核状态')}</span><strong>{running ? t('运行中') : state.status === 'starting' ? t('启动中') : t('已停止')}</strong></div><div><span>{t('配置文件')}</span><strong>{state.hasProfile ? t('已导入') : t('未导入')}</strong></div></div>
         </section>
+        <ExitIPCard connected={connected && running} groups={groups} language={language} profileRevision={profileRevision} routingMode={state.routingMode} />
         <div className="module-grid">
           <section className="panel module-card"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h3>{t('代理节点')}</h3></div><button className="module-link" type="button" onClick={() => setPage('proxies')}>{t('查看代理')} <ArrowRight size={17} /></button></section>
           <section className="panel module-card"><div className="module-icon"><Stack size={24} /></div><div><h3>{t('配置与订阅')}</h3></div><button className="module-link" type="button" onClick={() => setPage('profiles')}>{t('查看配置')} <ArrowRight size={17} /></button></section>

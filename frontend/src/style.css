@@ -78,6 +78,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .module-card h3 { margin: 18px 0 0; font-size: 18px; letter-spacing: -.025em; }
 .module-card .module-link { margin-top: auto; padding-top: 18px; }
 
+.exit-ip-card { margin-top: 18px; overflow: hidden; }
+.exit-ip-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 25px; border-bottom: 1px solid #eceef1; }
+.exit-ip-heading-label { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.exit-ip-icon { width: 46px; height: 46px; flex: none; display: grid; place-items: center; border-radius: 12px; background: #e7f0ff; color: #087cff; }
+.exit-ip-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.025em; }
+.exit-ip-heading p { margin: 4px 0 0; color: #62666d; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exit-ip-action, .exit-ip-visibility { display: inline-grid; place-items: center; flex: none; padding: 0; border: 0; background: transparent; color: #7a7d84; }
+.exit-ip-action { width: 35px; height: 35px; border-radius: 9px; }
+.exit-ip-action:hover:not(:disabled), .exit-ip-visibility:hover { background: #f1f4f8; color: #087cff; }
+.exit-ip-body { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 24px; padding: 21px 25px 18px; }
+.exit-ip-primary { display: grid; align-content: start; gap: 15px; min-width: 0; }
+.exit-ip-country { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 18px; line-height: 1.2; overflow-wrap: anywhere; }
+.exit-ip-flag { display: block; width: 29px; height: 21px; flex: none; object-fit: cover; }
+.exit-ip-country-code { display: inline-grid; place-items: center; min-width: 34px; height: 25px; padding: 0 4px; border-radius: 5px; background: #e7f0ff; color: #0869d6; font-size: 11px; letter-spacing: .02em; }
+.exit-ip-line { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 14px; }
+.exit-ip-line > span:first-child { color: #62666d; }
+.exit-ip-line code { font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.exit-ip-visibility { width: 25px; height: 25px; border-radius: 5px; }
+.exit-ip-details { display: grid; align-content: start; gap: 12px; min-width: 0; margin: 0; }
+.exit-ip-details div { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 9px; font-size: 13px; line-height: 1.3; }
+.exit-ip-details dt { color: #62666d; }
+.exit-ip-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.exit-ip-footer { display: flex; justify-content: space-between; gap: 12px; margin: 0 25px; padding: 13px 0 17px; border-top: 1px solid #eceef1; color: #62666d; font-size: 11px; }
+.exit-ip-footer span:last-child { text-align: right; }
+.exit-ip-empty { min-height: 120px; display: grid; place-items: center; padding: 25px; color: #62666d; font-size: 13px; text-align: center; overflow-wrap: anywhere; }
+
 .alert { margin: -10px 0 21px; padding: 13px 16px; border: 1px solid #ffccd5; border-radius: 12px; background: #fff3f5; color: #b91337; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .page-panel { min-height: 330px; padding: 27px 30px; }
 .panel-heading { display: flex; align-items: center; gap: 14px; }
@@ -211,6 +237,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .connection-main { align-items: flex-start; flex-direction: column; gap: 18px; }
   .connection-meta div + div { padding-left: 12px; }
   .module-card { padding: 19px; }
+  .exit-ip-body { gap: 15px; }
   .proxy-node-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 620px) {
@@ -222,6 +249,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .content { padding: 30px 19px 20px; }
   .module-grid { grid-template-columns: 1fr; }
   .module-card { min-height: 170px; }
+  .exit-ip-heading { padding: 16px 18px; }
+  .exit-ip-body { grid-template-columns: 1fr; gap: 20px; padding: 18px; }
+  .exit-ip-footer { margin: 0 18px; }
   .connection-meta strong { font-size: 11px; }
   .connection-modes { grid-template-columns: 1fr; }
   .routing-options { grid-template-columns: 1fr; }

@@ -53,6 +53,8 @@ func (s *RuntimeService) TrafficTotals() (mihomo.TrafficTotals, error) {
 
 func (s *RuntimeService) CoreInfo() (mihomo.CoreInfo, error) { return s.runner.CoreInfo() }
 
+func (s *RuntimeService) ExitIPInfo() (mihomo.ExitIPInfo, error) { return s.runner.ExitIPInfo() }
+
 func (s *RuntimeService) ImportProfile(contents string) (mihomo.State, error) {
 	return s.runner.Import(contents)
 }
