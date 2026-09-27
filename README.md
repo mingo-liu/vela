@@ -1,6 +1,21 @@
-# Vela
+<p align="center">
+  <img src="build/appicon.png" alt="Vela logo" width="200">
+</p>
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+<h1 align="center">Vela</h1>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
+  <a href="https://github.com/mingo-liu/vela/actions/workflows/test.yml"><img src="https://github.com/mingo-liu/vela/actions/workflows/test.yml/badge.svg" alt="Test status"></a>
+  <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple" alt="macOS Apple Silicon">
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.25">
+  <img src="https://img.shields.io/badge/Wails-v3-blue" alt="Wails v3">
+  <img src="https://img.shields.io/badge/React-18-149ECA?logo=react&amp;logoColor=white" alt="React 18">
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 Vela is a macOS proxy client built with Wails v3, React, and mihomo. It provides a desktop interface for managing a mihomo configuration and routing traffic through the macOS system proxy or Tun mode.
 

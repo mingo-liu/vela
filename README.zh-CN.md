@@ -1,6 +1,21 @@
-# Vela
+<p align="center">
+  <img src="build/appicon.png" alt="Vela 图标" width="200">
+</p>
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+<h1 align="center">Vela</h1>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 许可证"></a>
+  <a href="https://github.com/mingo-liu/vela/actions/workflows/test.yml"><img src="https://github.com/mingo-liu/vela/actions/workflows/test.yml/badge.svg" alt="测试状态"></a>
+  <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple" alt="macOS Apple Silicon">
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.25">
+  <img src="https://img.shields.io/badge/Wails-v3-blue" alt="Wails v3">
+  <img src="https://img.shields.io/badge/React-18-149ECA?logo=react&amp;logoColor=white" alt="React 18">
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 Vela 是基于 Wails v3、React 和 mihomo 构建的 macOS 代理客户端。它提供桌面界面，用于管理 mihomo 配置，并通过 macOS 系统代理或 Tun 模式转发流量。
 
