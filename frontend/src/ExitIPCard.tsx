@@ -101,7 +101,7 @@ export default function ExitIPCard({ connected, groups, language, profileRevisio
           <div><dt>{t('时区')}</dt><dd>{display(info.timezone, missing)}</dd></div>
         </dl>
       </div>
-      <div className="exit-ip-footer"><span>{t('自动刷新')}：{remaining}s{routingMode === 'rule' && <span className="exit-ip-rule-note"> · {t('出口由分流规则决定')}</span>}</span><span>{info.countryCode}{coordinates && `, ${coordinates}`}</span></div>
+      <div className="exit-ip-footer"><span>{t('自动刷新')}：{remaining}s</span><span>{info.countryCode}{coordinates && `, ${coordinates}`}</span></div>
     </> : null}
   </section>
 }

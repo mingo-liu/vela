@@ -13,6 +13,7 @@ import ExitIPCard from './ExitIPCard'
 type Page = 'home' | 'proxies' | 'profiles' | 'logs' | 'settings'
 type SortMode = 'name' | 'delay'
 type LogLevel = 'all' | 'error' | 'warning' | 'info' | 'debug' | 'other'
+const delayCacheDuration = 3 * 60 * 1000
 
 const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false, routingMode: 'rule' }
 const routingModes = [
@@ -91,10 +92,14 @@ export default function App() {
   const [page, setPage] = useState<Page>('home')
   const [state, setState] = useState<State>(empty)
   const [groups, setGroups] = useState<Group[]>([])
+  const [groupsRevision, setGroupsRevision] = useState(-1)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [groupDelays, setGroupDelays] = useState<Record<string, Record<string, number | undefined>>>({})
   const [measuredGroups, setMeasuredGroups] = useState<Record<string, boolean>>({})
   const [testingGroup, setTestingGroup] = useState<string | null>(null)
+  const [completedDelayTests, setCompletedDelayTests] = useState(0)
+  const testingGroupRef = useRef<string | null>(null)
+  const delayCache = useRef<Record<string, { options: string; testedAt: number }>>({})
   const [sortModes, setSortModes] = useState<Record<string, SortMode>>({})
   const [nodeNames, setNodeNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -111,6 +116,8 @@ export default function App() {
   const followLogs = useRef(true)
   const [portDraft, setPortDraft] = useState('7890')
   const [profileRevision, setProfileRevision] = useState(0)
+  const profileRevisionRef = useRef(profileRevision)
+  profileRevisionRef.current = profileRevision
   const fileInput = useRef<HTMLInputElement>(null)
   const language: Language = settings.language === 'en-US' ? 'en-US' : 'zh-CN'
   const t = (text: string) => translate(language, text)
@@ -175,9 +182,9 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!state.hasProfile) { setGroups([]); return }
+    if (!state.hasProfile) { setGroups([]); setGroupsRevision(profileRevision); return }
     let active = true
-    Runtime.Groups().then(value => { if (active) setGroups(value ?? []) })
+    Runtime.Groups().then(value => { if (active) { setGroups(value ?? []); setGroupsRevision(profileRevision) } })
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
   }, [state.status, state.hasProfile, profileRevision])
@@ -191,6 +198,7 @@ export default function App() {
   }, [state.hasProfile, profileRevision])
 
   useEffect(() => {
+    delayCache.current = {}
     setGroupDelays({})
     setMeasuredGroups({})
   }, [profileRevision])
@@ -270,19 +278,37 @@ export default function App() {
   }
 
   const testGroupDelay = async (group: string) => {
-    if (testingGroup) return
+    if (testingGroupRef.current) return
+    const options = JSON.stringify(groups.find(candidate => candidate.name === group)?.options ?? [])
+    const revision = profileRevision
+    testingGroupRef.current = group
+    delayCache.current[group] = { options, testedAt: Date.now() }
     setTestingGroup(group)
     setNotice('')
     try {
       const delays = await Runtime.TestGroupDelay(group)
-      setGroupDelays(current => ({ ...current, [group]: delays ?? {} }))
-      setMeasuredGroups(current => ({ ...current, [group]: true }))
+      if (profileRevisionRef.current === revision) {
+        setGroupDelays(current => ({ ...current, [group]: delays ?? {} }))
+        setMeasuredGroups(current => ({ ...current, [group]: true }))
+      }
     } catch (error) {
-      setNotice(message(error))
+      if (profileRevisionRef.current === revision) setNotice(message(error))
     } finally {
+      testingGroupRef.current = null
       setTestingGroup(null)
+      setCompletedDelayTests(count => count + 1)
     }
   }
+
+  useEffect(() => {
+    if (page !== 'proxies' || state.status !== 'running' || !state.hasProfile || busy || testingGroupRef.current || groupsRevision !== profileRevision) return
+    const group = groups.find((candidate, index) => {
+      if (!(expandedGroups[candidate.name] ?? index === 0) || !candidate.options?.length) return false
+      const cached = delayCache.current[candidate.name]
+      return !cached || cached.options !== JSON.stringify(candidate.options) || Date.now() - cached.testedAt >= delayCacheDuration
+    })
+    if (group) void testGroupDelay(group.name)
+  }, [page, state.status, state.hasProfile, busy, groups, groupsRevision, expandedGroups, completedDelayTests, profileRevision])
 
   const toggleGroupSort = (group: string) => {
     const next = (sortModes[group] ?? 'name') === 'name' ? 'delay' : 'name'

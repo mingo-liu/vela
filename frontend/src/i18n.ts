@@ -74,7 +74,6 @@ const english: Record<string, string> = {
   '位置': 'Location',
   '时区': 'Timezone',
   '自动刷新': 'Auto refresh',
-  '出口由分流规则决定': 'Exit follows routing rules',
   '配置与订阅': 'Profiles and subscriptions',
   '策略组': 'Proxy group',
   '尚无配置': 'No profile yet',
