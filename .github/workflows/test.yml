@@ -19,7 +19,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            scripts/mihomo/go.sum
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -45,8 +47,17 @@ jobs:
       - name: Build frontend for Go embedding
         run: npm --prefix frontend run build
 
-      - name: Run Go tests
-        run: go test ./...
+      - name: Build security-maintained core
+        run: sh scripts/prepare-mihomo.sh
+
+      - name: Run Go and real-core regression tests
+        run: VELA_TEST_MIHOMO="$PWD/build/resources/mihomo" go test -race ./...
+
+      - name: Scan application and bundled core
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+          go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary build/resources/mihomo
+          npm --prefix frontend audit
 
       - name: Vet Go code
         run: go vet ./...

@@ -210,7 +210,8 @@ tasks:
         platforms: [linux, windows]
 
   prepare:mihomo:
-    summary: Downloads and verifies the pinned Apple Silicon mihomo binary
+    summary: Builds the pinned Apple Silicon mihomo core with security-maintained dependencies
+    run: once
     platforms: [darwin]
     cmds:
       - sh scripts/prepare-mihomo.sh

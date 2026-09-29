@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 许可证"></a>
   <a href="https://github.com/mingo-liu/vela/actions/workflows/test.yml"><img src="https://github.com/mingo-liu/vela/actions/workflows/test.yml/badge.svg" alt="测试状态"></a>
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple" alt="macOS Apple Silicon">
-  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.25">
+  <img src="https://img.shields.io/badge/Go-1.26.8-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.26.8">
   <img src="https://img.shields.io/badge/Wails-v3-blue" alt="Wails v3">
   <img src="https://img.shields.io/badge/React-18-149ECA?logo=react&amp;logoColor=white" alt="React 18">
 </p>
@@ -29,7 +29,7 @@ Vela 是基于 Wails v3、React 和 mihomo 构建的 macOS 代理客户端。它
 
 ## 构建与运行
 
-需要 Apple Silicon Mac、Go 1.25+、Node.js 24、npm、Xcode Command Line Tools，以及 Wails。
+需要 Apple Silicon Mac、Go 1.26.8+、Node.js 24、npm、Xcode Command Line Tools，以及 Wails。
 
 ```sh
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
@@ -37,7 +37,9 @@ wails3 package
 open bin/Vela.app
 ```
 
-开发运行使用 `wails3 dev`。
+开发运行使用 `wails3 dev`。首次构建会从固定版本源码编译已更新依赖的 Mihomo，后续构建复用经过校验的缓存。
+
+TUN 权限隔离、本地规则文件路径要求及漏洞检查命令见[安全说明](docs/security.md)。
 
 ## 网络模式
 

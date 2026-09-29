@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
   <a href="https://github.com/mingo-liu/vela/actions/workflows/test.yml"><img src="https://github.com/mingo-liu/vela/actions/workflows/test.yml/badge.svg" alt="Test status"></a>
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple" alt="macOS Apple Silicon">
-  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.25">
+  <img src="https://img.shields.io/badge/Go-1.26.8-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.26.8">
   <img src="https://img.shields.io/badge/Wails-v3-blue" alt="Wails v3">
   <img src="https://img.shields.io/badge/React-18-149ECA?logo=react&amp;logoColor=white" alt="React 18">
 </p>
@@ -29,7 +29,7 @@ Vela is a macOS proxy client built with Wails v3, React, and mihomo. It provides
 
 ## Build and run
 
-Requires macOS on Apple Silicon, Go 1.25+, Node.js 24, npm, Xcode Command Line Tools, and Wails.
+Requires macOS on Apple Silicon, Go 1.26.8+, Node.js 24, npm, Xcode Command Line Tools, and Wails.
 
 ```sh
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
@@ -37,7 +37,9 @@ wails3 package
 open bin/Vela.app
 ```
 
-For development, run `wails3 dev`.
+For development, run `wails3 dev`. The first build compiles the pinned Mihomo source with updated dependencies; subsequent builds reuse a verified cache.
+
+See [security boundaries and verification](docs/security.md) for TUN isolation, local rule-file paths and vulnerability checks.
 
 ## Network modes
 
