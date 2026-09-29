@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -42,13 +43,17 @@ func serviceAvailable() bool {
 
 // RunTunClient keeps one connection to the privileged service for a TUN session.
 func RunTunClient(args []string) error {
+	return runTunClient(args, tunSocket)
+}
+
+func runTunClient(args []string, socket string) error {
 	if len(args) != 3 {
 		return errors.New("Tun 客户端参数无效")
 	}
 	var conn net.Conn
 	var err error
 	for i := 0; i < 30; i++ {
-		conn, err = net.DialTimeout("unix", tunSocket, 300*time.Millisecond)
+		conn, err = net.DialTimeout("unix", socket, 300*time.Millisecond)
 		if err == nil {
 			break
 		}
@@ -61,6 +66,26 @@ func RunTunClient(args []string) error {
 	if err := json.NewEncoder(conn).Encode(tunRequest{args[0], args[1], args[2]}); err != nil {
 		return err
 	}
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	defer os.Remove(args[2])
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopWatch:
+				return
+			case <-ticker.C:
+				if _, err := os.Stat(args[2]); err == nil {
+					if unixConn, ok := conn.(*net.UnixConn); ok {
+						_ = unixConn.CloseWrite()
+					}
+					return
+				}
+			}
+		}
+	}()
 	reader := bufio.NewReader(conn)
 	first, err := reader.ReadString('\n')
 	if err != nil {
@@ -194,19 +219,56 @@ func runTunSession(ctx context.Context, conn net.Conn, uid int, request tunReque
 	if err != nil {
 		return err
 	}
-	configFile, err := os.CreateTemp(tunInstallDir, ".runtime-*.yaml")
+	// No root process ever uses a user-writable directory for runtime assets.
+	sessionDir, err := os.MkdirTemp(tunInstallDir, ".session-")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(configFile.Name())
-	if _, err := configFile.Write(compiled); err != nil {
-		configFile.Close()
+	defer os.RemoveAll(sessionDir)
+	dataDir, err := privateTunData(uid)
+	if err != nil {
 		return err
 	}
-	if err := configFile.Close(); err != nil {
+	control, err := newTunControl(compiled, sessionDir)
+	if err != nil {
 		return err
 	}
-	cmd := exec.Command(filepath.Join(tunInstallDir, "mihomo"), "-d", request.DataDir, "-f", configFile.Name())
+	defer control.client.CloseIdleConnections()
+	privateConfig, err := control.compile(compiled)
+	if err != nil {
+		return err
+	}
+	source, err := openTunData(uid)
+	if err != nil {
+		return err
+	}
+	privateConfig, err = snapshotTunResources(privateConfig, source, dataDir)
+	defer source.Close()
+	control.prepare = func(data []byte) ([]byte, error) { return snapshotTunResources(data, source, dataDir) }
+	if err != nil {
+		return err
+	}
+	// The database is installed and hashed alongside the helper, never read from
+	// a user-controlled path by the privileged core.
+	database, err := os.ReadFile(filepath.Join(tunInstallDir, "Country.mmdb"))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "Country.mmdb"), database, 0600); err != nil {
+		return err
+	}
+	configPath := filepath.Join(sessionDir, "runtime.yaml")
+	if err := os.WriteFile(configPath, privateConfig, 0600); err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", control.port))
+	if err != nil {
+		return err
+	}
+	server := &http.Server{Handler: control, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 8192}
+	defer server.Close()
+	go func() { _ = server.Serve(listener) }()
+	cmd := exec.Command(filepath.Join(tunInstallDir, "mihomo"), "-d", dataDir, "-f", configPath)
 	cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/root"}
 	logs := &tunLog{}
 	cmd.Stdout, cmd.Stderr = logs, logs
@@ -221,9 +283,6 @@ func runTunSession(ctx context.Context, conn net.Conn, uid int, request tunReque
 		_, _ = io.Copy(io.Discard, conn)
 		close(closed)
 	}()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	defer os.Remove(request.StopPath)
 	for {
 		select {
 		case <-ctx.Done():
@@ -238,13 +297,8 @@ func runTunSession(ctx context.Context, conn net.Conn, uid int, request tunReque
 			return nil
 		case <-closed:
 			stopTunProcess(cmd, done)
+			fmt.Fprintln(conn, "STOP")
 			return nil
-		case <-ticker.C:
-			if _, err := os.Stat(request.StopPath); err == nil {
-				stopTunProcess(cmd, done)
-				fmt.Fprintln(conn, "STOP")
-				return nil
-			}
 		}
 	}
 }
@@ -257,4 +311,21 @@ func stopTunProcess(cmd *exec.Cmd, done <-chan error) {
 		_ = cmd.Process.Kill()
 		<-done
 	}
+}
+
+// Keep provider caches and protocol state across reconnects, under root ownership.
+func privateTunData(uid int) (string, error) {
+	path := filepath.Join(tunInstallDir, fmt.Sprintf("data-%d", uid))
+	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !info.IsDir() || info.Mode().Perm() != 0700 || !ok || stat.Uid != 0 {
+		return "", errors.New("Tun 私有数据目录权限无效")
+	}
+	return path, nil
 }

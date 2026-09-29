@@ -1,11 +1,18 @@
 package profile
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -83,7 +90,7 @@ rules:
 		t.Fatal(err)
 	}
 	out := string(compiled)
-	if !strings.Contains(out, "RULE-SET,gfw,DIRECT") || !strings.Contains(out, "./ruleset/gfw.yaml") || !strings.Contains(out, "udp: true") {
+	if !strings.Contains(out, "RULE-SET,gfw,DIRECT") || !strings.Contains(out, "path: rules/") || strings.Contains(out, "./ruleset/gfw.yaml") || !strings.Contains(out, "udp: true") {
 		t.Fatalf("rule providers were lost: %s", out)
 	}
 	if strings.Contains(out, "listen:") {
@@ -188,5 +195,88 @@ func TestImportFailureKeepsLastProfile(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(filepath.Dir(store.path), "profile.yaml"))
 	if err != nil || string(got) != valid {
 		t.Fatalf("profile changed after failed import: %q, %v", got, err)
+	}
+}
+
+func TestRuleDownloadCannotOverwriteApplicationFiles(t *testing.T) {
+	for _, path := range []string{"profile.yaml", "settings.json", "../escape.yaml", "/etc/hosts", "rules/../../runtime.yaml"} {
+		raw := []byte("rule-providers:\n  remote:\n    type: http\n    behavior: domain\n    url: https://example.com/rules\n    path: " + path + "\nrules: [MATCH,DIRECT]\n")
+		compiled, err := Compile(raw, 7890, 9090, "secret")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc yaml.Node
+		yaml.Unmarshal(compiled, &doc)
+		providers := lookup(doc.Content[0], "rule-providers")
+		got := lookup(providers.Content[1], "path").Value
+		if !strings.HasPrefix(got, "rules/") || len(filepath.Base(got)) != 69 {
+			t.Fatalf("unsafe download path %q", got)
+		}
+		again, err := Compile(compiled, 7890, 9090, "secret")
+		if err != nil || string(again) != string(compiled) {
+			t.Fatalf("compilation not idempotent: %v", err)
+		}
+	}
+	for _, path := range []string{"profile.yaml", "rules/../../secret", "/etc/passwd"} {
+		raw := []byte("rule-providers:\n  local:\n    type: file\n    path: " + path + "\n")
+		if _, err := Compile(raw, 7890, 9090, "secret"); err == nil {
+			t.Fatalf("unsafe file provider accepted: %s", path)
+		}
+	}
+}
+
+func TestRuleProviderWithRealCoreCannotOverwriteProfile(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO for core integration")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "payload: [example.com]\n") }))
+	defer server.Close()
+	dir := t.TempDir()
+	marker := []byte("application-profile-must-survive")
+	if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), marker, 0600); err != nil {
+		t.Fatal(err)
+	}
+	port, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := port.Addr().(*net.TCPAddr).Port
+	port.Close()
+	proxy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixed := proxy.Addr().(*net.TCPAddr).Port
+	proxy.Close()
+	raw := []byte("rule-providers:\n  remote:\n    type: http\n    behavior: domain\n    url: " + server.URL + "\n    path: profile.yaml\n    interval: 3600\nrules:\n  - RULE-SET,remote,DIRECT\n  - MATCH,DIRECT\n")
+	compiled, err := Compile(raw, mixed, api, "integration-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(dir, "runtime.yaml")
+	os.WriteFile(config, compiled, 0600)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "-d", dir, "-f", config)
+	cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + dir}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cmd.Process.Kill(); cmd.Wait() }()
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		files, _ := filepath.Glob(filepath.Join(dir, "rules", "*.yaml"))
+		if len(files) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("provider not downloaded")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "profile.yaml"))
+	if err != nil || !bytes.Equal(got, marker) {
+		t.Fatalf("profile overwritten: %q %v", got, err)
 	}
 }

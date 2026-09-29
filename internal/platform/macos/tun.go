@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -97,9 +98,11 @@ func ensureTunService(service, binary, language string) error {
 	helper := filepath.Join(tunInstallDir, "service")
 	core := filepath.Join(tunInstallDir, "mihomo")
 	ownerFile := filepath.Join(tunInstallDir, "owner-uid")
+	database := filepath.Join(filepath.Dir(binary), "Country.mmdb")
+	installedDatabase := filepath.Join(tunInstallDir, "Country.mmdb")
 	ownerUID := strconv.Itoa(os.Getuid())
 	installedOwner, _ := os.ReadFile(ownerFile)
-	if strings.TrimSpace(string(installedOwner)) == ownerUID && installedCopyMatches(service, helper) && installedCopyMatches(binary, core) && serviceAvailable() {
+	if strings.TrimSpace(string(installedOwner)) == ownerUID && installedCopyMatches(service, helper) && installedCopyMatches(binary, core) && installedDataMatches(database, installedDatabase) && serviceAvailable() {
 		return nil
 	}
 	serviceHash, err := fileHash(service)
@@ -110,6 +113,11 @@ func ensureTunService(service, binary, language string) error {
 	if err != nil {
 		return err
 	}
+	databaseHash, err := fileHash(database)
+	if err != nil {
+		return err
+	}
+	databaseTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".geodata-%d", os.Getpid()))
 	helperTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".service-%d", os.Getpid()))
 	coreTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".mihomo-%d", os.Getpid()))
 	plist := "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>" + tunServiceID + "</string><key>ProgramArguments</key><array><string>" + helper + "</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>"
@@ -120,7 +128,10 @@ func ensureTunService(service, binary, language string) error {
 		"/usr/bin/install -o root -g wheel -m 0755 " + shellQuote(binary) + " " + shellQuote(coreTemp),
 		"test \"$(/usr/bin/shasum -a 256 " + shellQuote(helperTemp) + " | /usr/bin/cut -d ' ' -f 1)\" = " + shellQuote(serviceHash),
 		"test \"$(/usr/bin/shasum -a 256 " + shellQuote(coreTemp) + " | /usr/bin/cut -d ' ' -f 1)\" = " + shellQuote(coreHash),
+		"/usr/bin/install -o root -g wheel -m 0644 " + shellQuote(database) + " " + shellQuote(databaseTemp),
+		"/usr/bin/shasum -a 256 " + shellQuote(databaseTemp) + " | /usr/bin/awk '{print $1}' | /usr/bin/grep -qx " + shellQuote(databaseHash),
 		"/bin/launchctl bootout system/" + tunServiceID + " 2>/dev/null || true",
+		"/bin/mv -f " + shellQuote(databaseTemp) + " " + shellQuote(installedDatabase),
 		"/bin/mv -f " + shellQuote(coreTemp) + " " + shellQuote(core),
 		"/bin/mv -f " + shellQuote(helperTemp) + " " + shellQuote(helper),
 		"/bin/chmod 0755 " + shellQuote(helper),
@@ -143,7 +154,7 @@ func ensureTunService(service, binary, language string) error {
 		return fmt.Errorf("安装 Tun 辅助程序失败: %w；%s", err, strings.TrimSpace(string(output)))
 	}
 	installedOwner, _ = os.ReadFile(ownerFile)
-	if strings.TrimSpace(string(installedOwner)) != ownerUID || !installedCopyMatches(service, helper) || !installedCopyMatches(binary, core) {
+	if strings.TrimSpace(string(installedOwner)) != ownerUID || !installedCopyMatches(service, helper) || !installedCopyMatches(binary, core) || !installedDataMatches(database, installedDatabase) {
 		return errors.New("Tun 辅助程序安装后校验失败")
 	}
 	return nil
@@ -161,19 +172,30 @@ func validateTunConfig(uid int, dataDir, configPath, stopPath string) ([]byte, e
 	if filepath.Dir(stopPath) != expectedDir || !strings.HasPrefix(filepath.Base(stopPath), "tun-stop-") {
 		return nil, errors.New("Tun helper 停止标记无效")
 	}
-	data, err := os.ReadFile(configPath)
+	root, err := openTunData(uid)
 	if err != nil {
 		return nil, err
 	}
-	store := profile.NewStore(dataDir)
-	raw, err := store.Load()
+	defer root.Close()
+	data, err := readRootFile(root, "runtime.yaml", profile.MaxConfigSize)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := store.Settings()
+	raw, err := readRootFile(root, "profile.yaml", profile.MaxConfigSize)
 	if err != nil {
 		return nil, err
 	}
+	settings := profile.DefaultSettings()
+	settingsData, err := readRootFile(root, "settings.json", 64<<10)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		if err := json.Unmarshal(settingsData, &settings); err != nil {
+			return nil, err
+		}
+	}
+
 	return validateManagedTunConfigWithSettings(data, raw, settings.RoutingMode, settings.LogLevel, settings.MixedPort)
 }
 
@@ -199,7 +221,7 @@ func validateManagedTunConfigWithSettings(data, raw []byte, routingMode, logLeve
 		return nil, errors.New("Tun helper 控制地址无效")
 	}
 	apiPort, err := strconv.Atoi(portText)
-	if err != nil || apiPort < 1 || apiPort > 65535 || len(settings.Secret) != 64 {
+	if err != nil || apiPort < 1024 || apiPort > 65535 || len(settings.Secret) != 64 {
 		return nil, errors.New("Tun helper 控制密钥无效")
 	}
 	if _, err := hex.DecodeString(settings.Secret); err != nil {
@@ -234,4 +256,49 @@ func (l *tunLog) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return string(l.data)
+}
+
+func openTunData(uid int) (*os.Root, error) {
+	owner, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		return nil, err
+	}
+	home, err := os.OpenRoot(owner.HomeDir)
+	if err != nil {
+		return nil, err
+	}
+	defer home.Close()
+	root, err := home.OpenRoot("Library/Application Support/Vela")
+	if err != nil {
+		return nil, err
+	}
+	info, err := root.Stat(".")
+	if err == nil {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || int(stat.Uid) != uid {
+			err = errors.New("Tun 数据目录所有者无效")
+		}
+	}
+	if err != nil {
+		root.Close()
+		return nil, err
+	}
+	return root, nil
+}
+
+func installedDataMatches(source, target string) bool {
+	a, err := fileHash(source)
+	if err != nil {
+		return false
+	}
+	b, err := fileHash(target)
+	if err != nil || a != b {
+		return false
+	}
+	info, err := os.Lstat(target)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0644 {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Uid == 0
 }

@@ -1107,7 +1107,7 @@ func cleanEnv() []string {
 	result := make([]string, 0)
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if !strings.HasPrefix(key, "CLASH_") && key != "SAFE_PATHS" {
+		if !strings.HasPrefix(key, "CLASH_") && key != "SAFE_PATHS" && key != "SKIP_SAFE_PATH_CHECK" {
 			result = append(result, entry)
 		}
 	}
