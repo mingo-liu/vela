@@ -70,6 +70,69 @@ func TestSubscriptionReportsBase64NodeList(t *testing.T) {
 	}
 }
 
+func TestSubscriptionRefreshEditAndRemove(t *testing.T) {
+	body := map[string]string{
+		"/one":         "rules: [MATCH,DIRECT]\n",
+		"/two":         "rules: [MATCH,REJECT]\n",
+		"/replacement": "rules: [MATCH,REJECT]\n",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body[r.URL.Path]))
+	}))
+	defer server.Close()
+	store := NewStore(t.TempDir())
+	subs := NewSubscriptions(store, &memoryURLStore{})
+	for _, path := range []string{"/one", "/two"} {
+		if err := subs.Import(context.Background(), server.URL+path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := subs.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Select(context.Background(), items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	body["/two"] = "rules: [MATCH,DIRECT]\n"
+	if err := subs.RefreshInactive(context.Background(), items[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = subs.List()
+	if err != nil || !items[0].Active || items[1].Active {
+		t.Fatalf("selection changed: %+v, %v", items, err)
+	}
+	profile, err := store.Load()
+	if err != nil || string(profile) != body["/one"] {
+		t.Fatalf("current profile changed: %q, %v", profile, err)
+	}
+	if err := subs.ReplaceURL(context.Background(), items[0].ID, server.URL+"/replacement", func() error { return errors.New("reload failed") }); err == nil {
+		t.Fatal("failed reload accepted")
+	}
+	items, err = subs.List()
+	if err != nil || items[0].URL != server.URL+"/one" {
+		t.Fatalf("URL rollback failed: %+v, %v", items, err)
+	}
+	profile, err = store.Load()
+	if err != nil || string(profile) != body["/one"] {
+		t.Fatalf("profile rollback failed: %q, %v", profile, err)
+	}
+	if err := subs.ReplaceURL(context.Background(), items[0].ID, server.URL+"/replacement", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := subs.Remove(items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = subs.List()
+	if err != nil || len(items) != 1 || items[0].Active {
+		t.Fatalf("remove failed: %+v, %v", items, err)
+	}
+	profile, err = store.Load()
+	if err != nil || string(profile) != body["/replacement"] {
+		t.Fatalf("current profile was removed: %q, %v", profile, err)
+	}
+}
+
 func TestSubscriptionDownloadErrorDoesNotExposeToken(t *testing.T) {
 	store := NewStore(t.TempDir())
 	subs := NewSubscriptions(store, &memoryURLStore{})

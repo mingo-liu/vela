@@ -21,7 +21,7 @@ Vela 是基于 Wails v3、React 和 mihomo 构建的 macOS 代理客户端。它
 
 ## 功能
 
-- 导入本地 mihomo YAML 文件或 HTTP/HTTPS 订阅，手动更新订阅并切换当前配置。
+- 导入本地 mihomo YAML 文件或 HTTP/HTTPS 订阅，编辑和删除订阅、定时更新订阅并切换当前配置。
 - 支持配置中的节点提供器、规则提供器、Sniffer、GeoIP 和 GeoSite 规则；本地节点提供器文件须放在配置目录的 `providers/` 或 `proxies/` 下。
 - TUN 模式支持内联和本地节点提供器；HTTP 节点提供器仅用于系统代理模式。
 - 在手动策略组中选择节点、测试延迟，并按名称或延迟排序。

@@ -31,6 +31,7 @@ type State struct {
 	TunEnabled         bool   `json:"tunEnabled"`
 	TunSupported       bool   `json:"tunSupported"`
 	RoutingMode        string `json:"routingMode"`
+	ConfigVersion      uint64 `json:"configVersion"`
 }
 
 type CoreInfo struct {
@@ -168,6 +169,7 @@ func (r *Runner) Import(data string) (State, error) {
 		return r.state, err
 	}
 	r.state.HasProfile = true
+	r.state.ConfigVersion++
 	r.state.Error = ""
 	r.emit()
 	return r.state, nil
@@ -221,8 +223,94 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 		return r.state, err
 	}
 	r.state.HasProfile, r.state.Error = true, ""
+	r.state.ConfigVersion++
 	r.emit()
 	return r.state, nil
+}
+
+func (r *Runner) refreshInactiveSubscription(id string) error {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	return r.subs.RefreshInactive(context.Background(), id)
+}
+
+func (r *Runner) RemoveSubscription(id string) error {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	return r.subs.Remove(id)
+}
+
+func (r *Runner) ReplaceSubscriptionURL(id, address string) (State, error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cmd != nil && r.state.Status != "running" {
+		return r.state, errors.New("内核正在切换状态，请稍后重试")
+	}
+	items, err := r.subs.List()
+	if err != nil {
+		return r.state, err
+	}
+	active := false
+	for _, item := range items {
+		if item.ID == id {
+			active = item.Active
+			break
+		}
+	}
+	var apply func() error
+	if active && r.cmd != nil {
+		previousProfile, err := r.store.Load()
+		if err != nil {
+			return r.state, err
+		}
+		previousConfig, err := r.compile(previousProfile, r.apiPort, r.state.TunEnabled)
+		if err != nil {
+			return r.state, err
+		}
+		apply = func() error {
+			return r.reloadSelectedProfile(previousProfile, previousConfig, items)
+		}
+	}
+	if err := r.subs.ReplaceURL(context.Background(), id, address, apply); err != nil {
+		return r.state, err
+	}
+	r.state.Error = ""
+	r.state.ConfigVersion++
+	r.emit()
+	return r.state, nil
+}
+
+// UpdateDueSubscriptions is called by the app scheduler. It never changes the
+// selected subscription when refreshing an inactive one.
+func (r *Runner) UpdateDueSubscriptions(now time.Time, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	items, err := r.Subscriptions()
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		if item.UpdatedAt != nil && now.Sub(*item.UpdatedAt) < interval {
+			continue
+		}
+		if item.LastAttemptAt != nil && now.Sub(*item.LastAttemptAt) < time.Hour {
+			continue
+		}
+		var updateErr error
+		if item.Active {
+			_, updateErr = r.UpdateSubscription(item.ID)
+		} else {
+			updateErr = r.refreshInactiveSubscription(item.ID)
+		}
+		if updateErr != nil {
+			r.operationMu.Lock()
+			_ = r.subs.RecordUpdateError(item.ID, updateErr)
+			r.operationMu.Unlock()
+		}
+	}
 }
 
 func (r *Runner) SelectSubscription(id string) (State, error) {
@@ -261,6 +349,7 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 		}
 	}
 	r.state.HasProfile, r.state.Error = true, ""
+	r.state.ConfigVersion++
 	r.emit()
 	return r.state, nil
 }

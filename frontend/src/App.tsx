@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, FolderOpen, GearSix, GlobeHemisphereWest, House, LinkSimple, ListBullets, Stack, WifiMedium } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, FolderOpen, GearSix, GlobeHemisphereWest, House, LinkSimple, ListBullets, PencilSimple, Stack, Trash, WifiMedium } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import velaIcon from '../../build/appicon.png'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
@@ -15,7 +15,7 @@ type SortMode = 'name' | 'delay'
 type LogLevel = 'all' | 'error' | 'warning' | 'info' | 'debug' | 'other'
 const delayCacheDuration = 3 * 60 * 1000
 
-const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false, routingMode: 'rule' }
+const empty: State = { status: 'stopped', port: 7890, hasProfile: false, error: '', systemProxyEnabled: false, tunEnabled: false, tunSupported: false, routingMode: 'rule', configVersion: 0 }
 const routingModes = [
   { value: 'rule', label: '规则', description: '按配置规则分流' },
   { value: 'global', label: '全局', description: '使用 GLOBAL 策略组' },
@@ -50,7 +50,7 @@ function logLevel(line: string): Exclude<LogLevel, 'all'> {
   }
 }
 
-const defaultSettings: Settings = { mixedPort: 7890, routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', logLevel: 'profile', launchAtLogin: false, language: 'zh-CN' }
+const defaultSettings: Settings = { mixedPort: 7890, routingMode: 'rule', autoConnect: false, autoConnectMode: 'system', subscriptionUpdateHours: 24, logLevel: 'profile', launchAtLogin: false, language: 'zh-CN' }
 
 function formatBytes(bytes: number | null, language: Language): string {
   if (bytes === null) return translate(language, '未提供')
@@ -106,6 +106,8 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [subscriptionURL, setSubscriptionURL] = useState('')
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
+  const [editingSubscription, setEditingSubscription] = useState<string | null>(null)
+  const [subscriptionDraft, setSubscriptionDraft] = useState('')
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [coreInfo, setCoreInfo] = useState<CoreInfo | null>(null)
   const [coreInfoError, setCoreInfoError] = useState('')
@@ -115,7 +117,7 @@ export default function App() {
   const logList = useRef<HTMLDivElement>(null)
   const followLogs = useRef(true)
   const [portDraft, setPortDraft] = useState('7890')
-  const [profileRevision, setProfileRevision] = useState(0)
+  const profileRevision = state.configVersion
   const profileRevisionRef = useRef(profileRevision)
   profileRevisionRef.current = profileRevision
   const fileInput = useRef<HTMLInputElement>(null)
@@ -209,6 +211,12 @@ export default function App() {
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (page !== 'profiles') return
+    const timer = window.setInterval(() => { void Runtime.Subscriptions().then(value => setSubscriptions(value ?? [])).catch(() => {}) }, 30000)
+    return () => window.clearInterval(timer)
+  }, [page])
 
   const refreshSubscriptions = async () => {
     try {
@@ -324,7 +332,7 @@ export default function App() {
     }
     try {
       const contents = await file.text()
-      if (await execute(() => Runtime.ImportProfile(contents))) { await refreshSubscriptions(); setProfileRevision(value => value + 1) }
+      if (await execute(() => Runtime.ImportProfile(contents))) await refreshSubscriptions()
     } catch (error) {
       setNotice(message(error))
     }
@@ -338,11 +346,33 @@ export default function App() {
   }
 
   const updateSubscription = async (id: string) => {
-    if (await execute(() => Runtime.UpdateSubscription(id))) { await refreshSubscriptions(); setProfileRevision(value => value + 1) }
+    if (await execute(() => Runtime.UpdateSubscription(id))) await refreshSubscriptions()
   }
 
   const selectSubscription = async (id: string) => {
-    if (await execute(() => Runtime.SelectSubscription(id))) { await refreshSubscriptions(); setProfileRevision(value => value + 1) }
+    if (await execute(() => Runtime.SelectSubscription(id))) await refreshSubscriptions()
+  }
+
+  const saveSubscriptionURL = async (id: string) => {
+    if (await execute(() => Runtime.ReplaceSubscriptionURL(id, subscriptionDraft.trim()))) {
+      setEditingSubscription(null)
+      await refreshSubscriptions()
+    }
+  }
+
+  const removeSubscription = async (subscription: Subscription) => {
+    if (!window.confirm(t('确定删除此订阅？当前配置会保留。'))) return
+    setBusy(true)
+    setNotice('')
+    try {
+      await Runtime.RemoveSubscription(subscription.id)
+      if (editingSubscription === subscription.id) setEditingSubscription(null)
+      await refreshSubscriptions()
+    } catch (error) {
+      setNotice(message(error))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const running = state.status === 'running'
@@ -434,12 +464,16 @@ export default function App() {
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
                     <button className="subscription-refresh" type="button" disabled={busy} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={busy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setEditingSubscription(subscription.id); setSubscriptionDraft(subscription.url) }}><PencilSimple size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={busy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => void removeSubscription(subscription)}><Trash size={17} /></button>
                   </div>
                   <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={busy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
                     <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
                     <span className="subscription-usage"><span>{t('剩余')} <strong>{formatBytes(remaining, language)}</strong></span><span>{t('总量')} <strong>{formatBytes(subscription.total, language)}</strong></span></span>
                     <span className="subscription-dates"><span>{t('到期')} {formatDate(subscription.expiresAt, language)}</span><span>{t('更新')} {formatDate(subscription.updatedAt, language)}</span></span>
                   </button>
+                  {subscription.lastUpdateError && <small className="subscription-error" title={localizeError(language, subscription.lastUpdateError)}>{t('自动更新失败')}：{localizeError(language, subscription.lastUpdateError)}</small>}
+                  {editingSubscription === subscription.id && <div className="subscription-editor"><label className="field-label" htmlFor={`subscription-edit-${subscription.id}`}>{t('订阅链接')}</label><input className="text-field" id={`subscription-edit-${subscription.id}`} type="url" value={subscriptionDraft} disabled={busy} onChange={event => setSubscriptionDraft(event.target.value)} /><div className="subscription-editor-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => setEditingSubscription(null)}>{t('取消')}</button><button className="primary-button" type="button" disabled={busy || !subscriptionDraft.trim()} onClick={() => void saveSubscriptionURL(subscription.id)}>{t('保存并更新')}</button></div></div>}
                 </article>
               })}
             </div>
@@ -471,6 +505,7 @@ export default function App() {
             <button className={`setting-row setting-switch${settings.launchAtLogin ? ' on' : ''}`} type="button" role="switch" aria-checked={settings.launchAtLogin} disabled={busy} onClick={() => void updateSettings(() => Runtime.SetLaunchAtLogin(!settings.launchAtLogin))}><span><strong>{t('登录时启动')}</strong><small>{t('登录 macOS 后打开 Vela')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
             <button className={`setting-row setting-switch${settings.autoConnect ? ' on' : ''}`} type="button" role="switch" aria-checked={settings.autoConnect} disabled={busy} onClick={() => void updateSettings(() => Runtime.SetAutoConnect(!settings.autoConnect))}><span><strong>{t('启动后自动连接')}</strong><small>{t('有可用配置时，在 Vela 启动后连接')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
             <label className="setting-row" htmlFor="auto-connect-mode"><span><strong>{t('自动连接方式')}</strong><small>{t('下次启动时使用')}</small></span><select id="auto-connect-mode" value={settings.autoConnectMode} disabled={busy} onChange={event => void updateSettings(() => Runtime.SetAutoConnectMode(event.target.value))}><option value="system">{t('系统代理')}</option><option value="tun" disabled={!state.tunSupported}>{t('Tun 模式')}</option></select></label>
+            <label className="setting-row" htmlFor="subscription-update-hours"><span><strong>{t('订阅自动更新')}</strong><small>{t('自动刷新已保存的订阅')}</small></span><select id="subscription-update-hours" value={settings.subscriptionUpdateHours} disabled={busy} onChange={event => void updateSettings(() => Runtime.SetSubscriptionUpdateHours(Number(event.target.value)))}><option value={0}>{t('关闭')}</option><option value={6}>{t('每 6 小时')}</option><option value={12}>{t('每 12 小时')}</option><option value={24}>{t('每 24 小时')}</option></select></label>
           </section>
           <section className="panel settings-card" aria-labelledby="proxy-settings-title">
             <h2 id="proxy-settings-title">{t('代理设置')}</h2>

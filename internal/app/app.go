@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/mingo-liu/vela/internal/desktop"
 	"github.com/mingo-liu/vela/internal/mihomo"
@@ -31,6 +32,7 @@ func Run(assets fs.FS) error {
 		language = settings.Language
 	}
 	subs := profile.NewSubscriptions(store, profile.NewFileURLStore(dataDir, macos.SubscriptionKeychain{}))
+	stopUpdates := make(chan struct{})
 	binary := findBinary()
 	var wails *application.App
 	var systemProxyMenuItem *application.MenuItem
@@ -66,7 +68,7 @@ func Run(assets fs.FS) error {
 		Services:    []application.Service{application.NewService(service)},
 		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
-		OnShutdown:  runner.Close,
+		OnShutdown:  func() { close(stopUpdates); runner.Close() },
 	})
 	window := wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Vela", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 480,
@@ -136,6 +138,25 @@ func Run(assets fs.FS) error {
 			}
 		}()
 	}
+	go func() {
+		check := func() {
+			settings, err := store.Settings()
+			if err == nil && settings.SubscriptionUpdateHours > 0 {
+				runner.UpdateDueSubscriptions(time.Now(), time.Duration(settings.SubscriptionUpdateHours)*time.Hour)
+			}
+		}
+		check()
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				check()
+			case <-stopUpdates:
+				return
+			}
+		}
+	}()
 	return wails.Run()
 }
 

@@ -75,6 +75,14 @@ func (s *RuntimeService) SelectSubscription(id string) (mihomo.State, error) {
 	return s.runner.SelectSubscription(id)
 }
 
+func (s *RuntimeService) RemoveSubscription(id string) error {
+	return s.runner.RemoveSubscription(id)
+}
+
+func (s *RuntimeService) ReplaceSubscriptionURL(id, address string) (mihomo.State, error) {
+	return s.runner.ReplaceSubscriptionURL(id, address)
+}
+
 func (s *RuntimeService) SetSystemProxy(enabled bool) (mihomo.State, error) {
 	return s.runner.SetSystemProxy(enabled)
 }
@@ -145,6 +153,13 @@ func (s *RuntimeService) SetAutoConnectMode(mode string) (profile.Settings, erro
 	}
 	return s.store.UpdateSettings(func(settings *profile.Settings) error {
 		settings.AutoConnectMode = mode
+		return nil
+	})
+}
+
+func (s *RuntimeService) SetSubscriptionUpdateHours(hours int) (profile.Settings, error) {
+	return s.store.UpdateSettings(func(settings *profile.Settings) error {
+		settings.SubscriptionUpdateHours = hours
 		return nil
 	})
 }

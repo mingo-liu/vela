@@ -26,14 +26,16 @@ type URLStore interface {
 }
 
 type Subscription struct {
-	ID        string     `json:"id"`
-	URL       string     `json:"url"`
-	Active    bool       `json:"active"`
-	UpdatedAt *time.Time `json:"updatedAt"`
-	ExpiresAt *time.Time `json:"expiresAt"`
-	Upload    *int64     `json:"upload"`
-	Download  *int64     `json:"download"`
-	Total     *int64     `json:"total"`
+	ID              string     `json:"id"`
+	URL             string     `json:"url"`
+	Active          bool       `json:"active"`
+	UpdatedAt       *time.Time `json:"updatedAt"`
+	ExpiresAt       *time.Time `json:"expiresAt"`
+	Upload          *int64     `json:"upload"`
+	Download        *int64     `json:"download"`
+	Total           *int64     `json:"total"`
+	LastUpdateError string     `json:"lastUpdateError,omitempty"`
+	LastAttemptAt   *time.Time `json:"lastAttemptAt,omitempty"`
 }
 
 type subscriptionCatalog struct {
@@ -233,6 +235,17 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 	if err := validateSubscription(data); err != nil {
 		return err
 	}
+	previousCache, err := s.profiles.LoadSubscription(id)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	cacheExists := err == nil
+	rollbackCache := func() error {
+		if cacheExists {
+			return s.profiles.SaveSubscription(id, string(previousCache))
+		}
+		return s.profiles.DeleteSubscription(id)
+	}
 	for i := range catalog.Subscriptions {
 		catalog.Subscriptions[i].Active = i == index
 	}
@@ -242,11 +255,166 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 		return err
 	}
 	if err := s.save(catalog); err != nil {
-		return err
+		return errors.Join(err, rollbackCache())
 	}
 	if err := s.profiles.Import(string(data)); err != nil {
 		s.restore(raw)
+		return errors.Join(err, rollbackCache())
+	}
+	return nil
+}
+
+// RefreshInactive updates a saved subscription without selecting it.
+func (s *Subscriptions) RefreshInactive(ctx context.Context, id string) error {
+	catalog, _, err := s.catalog()
+	if err != nil {
 		return err
+	}
+	index := -1
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return ErrNoSubscription
+	}
+	if catalog.Subscriptions[index].Active {
+		return errors.New("当前订阅需要通过正常更新流程刷新")
+	}
+	data, info, err := s.fetch(ctx, catalog.Subscriptions[index].URL)
+	if err != nil {
+		return err
+	}
+	if err := validateSubscription(data); err != nil {
+		return err
+	}
+	previous, err := s.profiles.LoadSubscription(id)
+	if err != nil {
+		return err
+	}
+	info.ID, info.URL, info.Active = id, catalog.Subscriptions[index].URL, false
+	catalog.Subscriptions[index] = info
+	if err := s.profiles.SaveSubscription(id, string(data)); err != nil {
+		return err
+	}
+	if err := s.save(catalog); err != nil {
+		return errors.Join(err, s.profiles.SaveSubscription(id, string(previous)))
+	}
+	return nil
+}
+
+func (s *Subscriptions) Remove(id string) error {
+	catalog, raw, err := s.catalog()
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return ErrNoSubscription
+	}
+	catalog.Subscriptions = append(catalog.Subscriptions[:index], catalog.Subscriptions[index+1:]...)
+	if err := s.save(catalog); err != nil {
+		return err
+	}
+	if err := s.profiles.DeleteSubscription(id); err != nil {
+		s.restore(raw)
+		return err
+	}
+	return nil
+}
+
+func (s *Subscriptions) RecordUpdateError(id string, cause error) error {
+	catalog, _, err := s.catalog()
+	if err != nil {
+		return err
+	}
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID != id {
+			continue
+		}
+		message := cause.Error()
+		if len(message) > 300 {
+			message = message[:300]
+		}
+		now := time.Now().UTC()
+		catalog.Subscriptions[i].LastUpdateError = message
+		catalog.Subscriptions[i].LastAttemptAt = &now
+		return s.save(catalog)
+	}
+	return ErrNoSubscription
+}
+
+// ReplaceURL downloads and validates the new address before changing a saved
+// subscription. The callback reloads an active profile into a running core.
+func (s *Subscriptions) ReplaceURL(ctx context.Context, id, address string, apply func() error) error {
+	data, info, err := s.fetch(ctx, address)
+	if err != nil {
+		return err
+	}
+	if err := validateSubscription(data); err != nil {
+		return err
+	}
+	catalog, raw, err := s.catalog()
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i := range catalog.Subscriptions {
+		if catalog.Subscriptions[i].ID == id {
+			index = i
+		}
+	}
+	if index < 0 {
+		return ErrNoSubscription
+	}
+	if err := s.preserveActive(catalog); err != nil {
+		return err
+	}
+	oldCache, err := s.profiles.LoadSubscription(id)
+	if err != nil {
+		return err
+	}
+	active := catalog.Subscriptions[index].Active
+	var oldProfile []byte
+	if active {
+		oldProfile, err = s.profiles.Load()
+		if err != nil {
+			return err
+		}
+	}
+	rollback := func(cause error) error {
+		return errors.Join(cause, s.profiles.SaveSubscription(id, string(oldCache)), s.urls.Put(raw), func() error {
+			if active {
+				return s.profiles.Import(string(oldProfile))
+			}
+			return nil
+		}())
+	}
+	info.ID, info.URL, info.Active = id, address, active
+	catalog.Subscriptions[index] = info
+	if err := s.profiles.SaveSubscription(id, string(data)); err != nil {
+		return err
+	}
+	if err := s.save(catalog); err != nil {
+		return rollback(err)
+	}
+	if active {
+		if err := s.profiles.Import(string(data)); err != nil {
+			return rollback(err)
+		}
+		if apply != nil {
+			if err := apply(); err != nil {
+				return rollback(err)
+			}
+		}
 	}
 	return nil
 }

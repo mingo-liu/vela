@@ -19,17 +19,18 @@ const (
 )
 
 type Settings struct {
-	MixedPort       int    `json:"mixedPort"`
-	RoutingMode     string `json:"routingMode"`
-	AutoConnect     bool   `json:"autoConnect"`
-	AutoConnectMode string `json:"autoConnectMode"`
-	LogLevel        string `json:"logLevel"`
-	LaunchAtLogin   bool   `json:"launchAtLogin"`
-	Language        string `json:"language"`
+	MixedPort               int    `json:"mixedPort"`
+	RoutingMode             string `json:"routingMode"`
+	AutoConnect             bool   `json:"autoConnect"`
+	AutoConnectMode         string `json:"autoConnectMode"`
+	SubscriptionUpdateHours int    `json:"subscriptionUpdateHours"`
+	LogLevel                string `json:"logLevel"`
+	LaunchAtLogin           bool   `json:"launchAtLogin"`
+	Language                string `json:"language"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{MixedPort: DefaultMixedPort, RoutingMode: RoutingRule, AutoConnectMode: "system", LogLevel: LogFromProfile, Language: LanguageChinese}
+	return Settings{MixedPort: DefaultMixedPort, RoutingMode: RoutingRule, AutoConnectMode: "system", SubscriptionUpdateHours: 24, LogLevel: LogFromProfile, Language: LanguageChinese}
 }
 
 func ValidLanguage(language string) bool {
@@ -53,6 +54,7 @@ func ValidLogLevel(level string) bool {
 func validSettings(settings Settings) bool {
 	return ValidMixedPort(settings.MixedPort) && ValidRoutingMode(settings.RoutingMode) &&
 		(settings.AutoConnectMode == "system" || settings.AutoConnectMode == "tun") &&
+		(settings.SubscriptionUpdateHours == 0 || settings.SubscriptionUpdateHours == 6 || settings.SubscriptionUpdateHours == 12 || settings.SubscriptionUpdateHours == 24) &&
 		ValidLogLevel(settings.LogLevel) && ValidLanguage(settings.Language)
 }
 

@@ -183,6 +183,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .subscription-select:not(:disabled):hover .subscription-url { color: #e91543; }
 .subscription-refresh { position: relative; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
 .subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
+.subscription-editor { position: relative; z-index: 1; padding-top: 10px; border-top: 1px solid #eceef1; }
+.subscription-editor .field-label { margin: 0 0 8px; }
+.subscription-editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.subscription-editor-actions .primary-button, .subscription-editor-actions .secondary-button { min-height: 34px; padding: 0 9px; }
+.subscription-error { position: relative; z-index: 1; color: #b91337; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .subscription-url { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: #24272d; font-size: 12px; line-height: 1.4; user-select: text; }
 .subscription-url svg { flex: none; margin-top: 1px; color: #f31645; }
 .subscription-url span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
