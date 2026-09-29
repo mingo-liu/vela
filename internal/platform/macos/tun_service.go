@@ -257,6 +257,13 @@ func runTunSession(ctx context.Context, conn net.Conn, uid int, request tunReque
 	if err := os.WriteFile(filepath.Join(dataDir, "Country.mmdb"), database, 0600); err != nil {
 		return err
 	}
+	geosite, err := os.ReadFile(filepath.Join(tunInstallDir, "geosite.dat"))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "geosite.dat"), geosite, 0600); err != nil {
+		return err
+	}
 	configPath := filepath.Join(sessionDir, "runtime.yaml")
 	if err := os.WriteFile(configPath, privateConfig, 0600); err != nil {
 		return err

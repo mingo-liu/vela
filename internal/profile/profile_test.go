@@ -57,7 +57,7 @@ func TestCompileRejectsUnsafeOrUnsupportedConfig(t *testing.T) {
 	cases := []string{
 		"listeners:\n  - name: open\n    type: mixed\n    port: 9000\n",
 		"proxy-providers:\n  remote:\n    type: file\n    path: /tmp/private\n",
-		"rules:\n  - GEOSITE,CN,DIRECT\n",
+		"rules:\n  - IP-ASN,1234,DIRECT\n",
 		"rule-providers: [reject]\n",
 		"port: 1\nport: 2\n",
 		"proxies: &nodes [DIRECT]\nproxy-groups: *nodes\n",
@@ -95,6 +95,97 @@ rules:
 	}
 	if strings.Contains(out, "listen:") {
 		t.Fatalf("dns listen was kept: %s", out)
+	}
+}
+
+func TestCompileAcceptsProxyProvidersAndSniffer(t *testing.T) {
+	source := `proxy-providers:
+  remote:
+    type: http
+    url: https://example.com/nodes.yaml
+    path: ../../settings.json
+    interval: 86400
+  local:
+    type: file
+    path: providers/local.yaml
+proxy-groups:
+  - name: select
+    type: select
+    use: [remote, local]
+sniffer:
+  enable: true
+  sniff:
+    TLS:
+      ports: [443]
+`
+	compiled, err := Compile([]byte(source), 7890, 9090, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(compiled)
+	if !strings.Contains(out, "path: providers/") || strings.Contains(out, "settings.json") || !strings.Contains(out, "sniffer:") || !strings.Contains(out, "use: [remote, local]") {
+		t.Fatalf("proxy providers or sniffer lost: %s", out)
+	}
+	for _, bad := range []string{
+		"proxy-providers:\n  bad:\n    type: file\n    path: ../../private\n",
+		"proxy-providers:\n  bad:\n    type: file\n    path: rules/not-a-proxy.yaml\n",
+		"proxy-providers:\n  bad:\n    type: http\n    url: file:///tmp/private\n",
+	} {
+		if _, err := Compile([]byte(bad), 7890, 9090, "secret"); err == nil {
+			t.Fatalf("accepted unsafe provider: %s", bad)
+		}
+	}
+	if _, err := CompileForMode([]byte(source), 7890, 9090, "secret", true, RoutingRule); err == nil || !strings.Contains(err.Error(), "Tun 模式") {
+		t.Fatalf("TUN accepted remote proxy provider: %v", err)
+	}
+}
+
+func TestProxyProviderAndSnifferWithRealCore(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO for core integration")
+	}
+	source := `proxy-providers:
+  sample:
+    type: inline
+    payload:
+      - name: sample-node
+        type: socks5
+        server: 127.0.0.1
+        port: 1080
+proxy-groups:
+  - name: choose
+    type: select
+    use: [sample]
+    proxies: [DIRECT]
+sniffer:
+  enable: true
+  sniff:
+    TLS:
+      ports: [443]
+rules:
+  - GEOSITE,cn,DIRECT
+  - MATCH,choose
+`
+	compiled, err := Compile([]byte(source), 17890, 19090, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	geosite, err := os.ReadFile(filepath.Join(filepath.Dir(binary), "geosite.dat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "geosite.dat"), geosite, 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "runtime.yaml")
+	if err := os.WriteFile(path, compiled, 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(binary, "-t", "-d", dir, "-f", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("core rejected provider profile: %v\n%s", err, output)
 	}
 }
 

@@ -100,9 +100,11 @@ func ensureTunService(service, binary, language string) error {
 	ownerFile := filepath.Join(tunInstallDir, "owner-uid")
 	database := filepath.Join(filepath.Dir(binary), "Country.mmdb")
 	installedDatabase := filepath.Join(tunInstallDir, "Country.mmdb")
+	geosite := filepath.Join(filepath.Dir(binary), "geosite.dat")
+	installedGeosite := filepath.Join(tunInstallDir, "geosite.dat")
 	ownerUID := strconv.Itoa(os.Getuid())
 	installedOwner, _ := os.ReadFile(ownerFile)
-	if strings.TrimSpace(string(installedOwner)) == ownerUID && installedCopyMatches(service, helper) && installedCopyMatches(binary, core) && installedDataMatches(database, installedDatabase) && serviceAvailable() {
+	if strings.TrimSpace(string(installedOwner)) == ownerUID && installedCopyMatches(service, helper) && installedCopyMatches(binary, core) && installedDataMatches(database, installedDatabase) && installedDataMatches(geosite, installedGeosite) && serviceAvailable() {
 		return nil
 	}
 	serviceHash, err := fileHash(service)
@@ -117,7 +119,12 @@ func ensureTunService(service, binary, language string) error {
 	if err != nil {
 		return err
 	}
+	geositeHash, err := fileHash(geosite)
+	if err != nil {
+		return err
+	}
 	databaseTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".geodata-%d", os.Getpid()))
+	geositeTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".geosite-%d", os.Getpid()))
 	helperTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".service-%d", os.Getpid()))
 	coreTemp := filepath.Join(tunInstallDir, fmt.Sprintf(".mihomo-%d", os.Getpid()))
 	plist := "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>" + tunServiceID + "</string><key>ProgramArguments</key><array><string>" + helper + "</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>"
@@ -130,8 +137,11 @@ func ensureTunService(service, binary, language string) error {
 		"test \"$(/usr/bin/shasum -a 256 " + shellQuote(coreTemp) + " | /usr/bin/cut -d ' ' -f 1)\" = " + shellQuote(coreHash),
 		"/usr/bin/install -o root -g wheel -m 0644 " + shellQuote(database) + " " + shellQuote(databaseTemp),
 		"/usr/bin/shasum -a 256 " + shellQuote(databaseTemp) + " | /usr/bin/awk '{print $1}' | /usr/bin/grep -qx " + shellQuote(databaseHash),
+		"/usr/bin/install -o root -g wheel -m 0644 " + shellQuote(geosite) + " " + shellQuote(geositeTemp),
+		"/usr/bin/shasum -a 256 " + shellQuote(geositeTemp) + " | /usr/bin/awk '{print $1}' | /usr/bin/grep -qx " + shellQuote(geositeHash),
 		"/bin/launchctl bootout system/" + tunServiceID + " 2>/dev/null || true",
 		"/bin/mv -f " + shellQuote(databaseTemp) + " " + shellQuote(installedDatabase),
+		"/bin/mv -f " + shellQuote(geositeTemp) + " " + shellQuote(installedGeosite),
 		"/bin/mv -f " + shellQuote(coreTemp) + " " + shellQuote(core),
 		"/bin/mv -f " + shellQuote(helperTemp) + " " + shellQuote(helper),
 		"/bin/chmod 0755 " + shellQuote(helper),

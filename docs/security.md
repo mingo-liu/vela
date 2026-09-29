@@ -7,7 +7,7 @@ initial managed configuration, then starts Mihomo with a root-owned `0700` data
 directory. This directory preserves rule caches and protocol state across
 reconnects. The controller socket and initial runtime configuration are kept in a
 separate root-owned `0700` session directory and removed when the session ends.
-The GeoIP database is installed with the core and verified before installation.
+The GeoIP and GeoSite databases are installed with the core and verified before installation.
 
 The GUI's controller token only authorizes the restricted loopback gateway. The
 full Mihomo API is accessible through the private Unix socket. The gateway permits
@@ -36,6 +36,15 @@ such as `profile.yaml` or `settings.json`. Local file providers must use paths
 under `rules/` or `ruleset/` in Vela's data directory. Move local rule files into
 one of those directories and adjust the profile if it previously used another
 location. Inline rule providers remain supported.
+
+HTTP proxy-provider paths are similarly replaced with Vela-owned names under
+`providers/`. Local file providers must use paths under `providers/` or `proxies/`
+inside Vela's data directory. The TUN helper snapshots these files into private
+storage after checking ownership, type, size, and directory confinement.
+Inline and local provider node credentials are snapshotted into private storage.
+HTTP proxy providers are rejected in TUN mode because the privileged core would
+otherwise load remote node data without Vela checking local credential paths.
+
 
 Local certificate/private-key/planet files must be readable files owned by the
 user inside Vela's data directory. They are snapshotted for TUN on startup and

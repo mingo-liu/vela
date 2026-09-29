@@ -217,7 +217,7 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 		return nil, err
 	}
 	allowed := map[string]bool{
-		"proxies": true, "proxy-groups": true, "rules": true, "rule-providers": true,
+		"proxies": true, "proxy-groups": true, "rules": true, "rule-providers": true, "proxy-providers": true, "sniffer": true,
 		"hosts": true, "dns": true, "ipv6": true, "udp": true, "log-level": true,
 		"unified-delay": true, "tcp-concurrent": true,
 	}
@@ -230,7 +230,7 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 	} {
 		managed[key] = true
 	}
-	for _, key := range []string{"listeners", "proxy-providers", "script", "sniffer"} {
+	for _, key := range []string{"listeners", "script"} {
 		if value := lookup(root, key); value != nil && !isEmpty(value) {
 			return nil, fmt.Errorf("首版暂不支持 %s，请使用内联节点与规则", key)
 		}
@@ -247,8 +247,24 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 	if providers := lookup(root, "rule-providers"); providers != nil && !isEmpty(providers) && providers.Kind != yaml.MappingNode {
 		return nil, errors.New("rule-providers 必须是对象")
 	}
+	if providers := lookup(root, "proxy-providers"); providers != nil && !isEmpty(providers) && providers.Kind != yaml.MappingNode {
+		return nil, errors.New("proxy-providers 必须是对象")
+	}
 	if err := manageRuleProviders(lookup(root, "rule-providers")); err != nil {
 		return nil, err
+	}
+	if err := manageProxyProviders(lookup(root, "proxy-providers")); err != nil {
+		return nil, err
+	}
+	if tun {
+		providers := lookup(root, "proxy-providers")
+		if providers != nil && providers.Kind == yaml.MappingNode {
+			for i := 0; i < len(providers.Content); i += 2 {
+				if kind := lookup(providers.Content[i+1], "type"); kind != nil && kind.Value == "http" {
+					return nil, errors.New("Tun 模式暂不支持 HTTP 节点提供器，请改用本地或内联节点提供器")
+				}
+			}
+		}
 	}
 	if dns := lookup(root, "dns"); dns != nil && dns.Kind == yaml.MappingNode {
 		// Vela 不对外开放 DNS 端口；Tun 模式通过 dns-hijack 接管 DNS。
@@ -258,7 +274,7 @@ func CompileWithLogLevel(data []byte, mixedPort, controllerPort int, secret stri
 		for _, rule := range rules.Content {
 			if rule.Kind == yaml.ScalarNode {
 				upper := strings.ToUpper(strings.TrimSpace(rule.Value))
-				for _, prefix := range []string{"GEOSITE,", "IP-ASN,"} {
+				for _, prefix := range []string{"IP-ASN,"} {
 					if strings.HasPrefix(upper, prefix) {
 						return nil, fmt.Errorf("首版尚未打包规则资源: %s", prefix)
 					}
@@ -342,6 +358,53 @@ func manageRuleProviders(providers *yaml.Node) error {
 			remove(provider, "path")
 		default:
 			return fmt.Errorf("规则提供器 %s 类型无效", name)
+		}
+	}
+	return nil
+}
+
+// Keep provider downloads and local files inside Vela's data directory. HTTP
+// paths are owned by Vela so a profile cannot overwrite application state.
+func manageProxyProviders(providers *yaml.Node) error {
+	if providers == nil || isEmpty(providers) {
+		return nil
+	}
+	for i := 0; i < len(providers.Content); i += 2 {
+		name, provider := providers.Content[i].Value, providers.Content[i+1]
+		if provider.Kind != yaml.MappingNode {
+			return fmt.Errorf("节点提供器 %s 必须是对象", name)
+		}
+		kind := lookup(provider, "type")
+		if kind == nil {
+			return fmt.Errorf("节点提供器 %s 缺少类型", name)
+		}
+		switch kind.Value {
+		case "http":
+			address := lookup(provider, "url")
+			if address == nil {
+				return fmt.Errorf("节点提供器 %s 缺少 URL", name)
+			}
+			u, err := url.Parse(address.Value)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
+				return fmt.Errorf("节点提供器 %s URL 无效", name)
+			}
+			hash := sha256.Sum256([]byte(name + "\x00" + address.Value))
+			remove(provider, "path")
+			set(provider, "path", fmt.Sprintf("providers/%x.yaml", hash), "!!str")
+		case "file":
+			path := lookup(provider, "path")
+			if path == nil || !filepath.IsLocal(path.Value) {
+				return fmt.Errorf("节点提供器 %s 文件路径无效", name)
+			}
+			clean := filepath.ToSlash(filepath.Clean(path.Value))
+			if !strings.HasPrefix(clean, "providers/") && !strings.HasPrefix(clean, "proxies/") {
+				return fmt.Errorf("本地节点文件必须位于 providers 或 proxies 目录: %s", name)
+			}
+			path.Value = clean
+		case "inline":
+			remove(provider, "path")
+		default:
+			return fmt.Errorf("节点提供器 %s 类型无效", name)
 		}
 	}
 	return nil

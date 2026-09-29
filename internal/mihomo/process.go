@@ -484,24 +484,42 @@ func (r *Runner) compile(raw []byte, apiPort int, tun bool) ([]byte, error) {
 }
 
 func (r *Runner) ensureGeoIPDatabase(profile []byte) error {
-	if !bytes.Contains(bytes.ToUpper(profile), []byte("GEOIP,")) {
-		return nil
+	upper := bytes.ToUpper(profile)
+	if bytes.Contains(upper, []byte("GEOIP,")) {
+		found := false
+		for _, name := range []string{"Country.mmdb", "geoip.db", "geoip.metadb"} {
+			if _, err := os.Stat(filepath.Join(r.dataDir, name)); err == nil {
+				found = true
+				break
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		if !found {
+			if err := r.copyGeoResource("Country.mmdb", "缺少 GeoIP 数据库，请重新打包应用"); err != nil {
+				return err
+			}
+		}
 	}
-	for _, name := range []string{"Country.mmdb", "geoip.db", "geoip.metadb"} {
-		if _, err := os.Stat(filepath.Join(r.dataDir, name)); err == nil {
-			return nil
-		} else if !errors.Is(err, os.ErrNotExist) {
+	if bytes.Contains(upper, []byte("GEOSITE,")) {
+		if _, err := os.Stat(filepath.Join(r.dataDir, "geosite.dat")); errors.Is(err, os.ErrNotExist) {
+			return r.copyGeoResource("geosite.dat", "缺少 GeoSite 数据库，请重新打包应用")
+		} else if err != nil {
 			return err
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(r.binary), "Country.mmdb"))
+	return nil
+}
+
+func (r *Runner) copyGeoResource(name, missing string) error {
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(r.binary), name))
 	if errors.Is(err, os.ErrNotExist) {
-		return errors.New("缺少 GeoIP 数据库，请重新打包应用")
+		return errors.New(missing)
 	}
 	if err != nil {
-		return fmt.Errorf("读取 GeoIP 数据库失败: %w", err)
+		return fmt.Errorf("读取 %s 数据库失败: %w", name, err)
 	}
-	return writePrivate(filepath.Join(r.dataDir, "Country.mmdb"), data)
+	return writePrivate(filepath.Join(r.dataDir, name), data)
 }
 
 func (r *Runner) Stop() (State, error) {

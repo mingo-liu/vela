@@ -173,6 +173,69 @@ func TestTunSnapshotRejectsEscapingSymlink(t *testing.T) {
 	}
 }
 
+func TestTunSnapshotProxyProviderIsConfined(t *testing.T) {
+	source, dest := t.TempDir(), t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(source, "providers"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(source, "providers", "nodes.yaml")
+	if err := os.Symlink(outside, path); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	config := []byte("proxy-providers:\n  nodes:\n    type: file\n    path: providers/nodes.yaml\n")
+	if err := snapshotTunRules(config, root, dest); err == nil {
+		t.Fatal("symlink escape accepted")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("proxies: []"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshotTunRules(config, root, dest); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dest, "providers", "nodes.yaml")); err != nil || string(data) != "proxies: []" {
+		t.Fatalf("snapshot = %q, %v", data, err)
+	}
+}
+
+func TestTunSnapshotsLocalProviderCredentials(t *testing.T) {
+	source, dest := t.TempDir(), t.TempDir()
+	if err := os.Mkdir(filepath.Join(source, "providers"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "client.crt"), []byte("certificate"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	provider := "proxies:\n  - name: local\n    type: socks5\n    server: example.com\n    port: 1080\n    certificate: client.crt\n"
+	if err := os.WriteFile(filepath.Join(source, "providers", "nodes.yaml"), []byte(provider), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	config := []byte("proxy-providers:\n  nodes:\n    type: file\n    path: providers/nodes.yaml\n")
+	if _, err := snapshotTunResources(config, root, dest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "providers", "nodes.yaml"))
+	if err != nil || strings.Contains(string(data), "client.crt") || !strings.Contains(string(data), "credentials/") {
+		t.Fatalf("provider credentials not rewritten: %s, %v", data, err)
+	}
+}
+
 func TestPrivateControllerWithRealCore(t *testing.T) {
 	binary := os.Getenv("VELA_TEST_MIHOMO")
 	if binary == "" {

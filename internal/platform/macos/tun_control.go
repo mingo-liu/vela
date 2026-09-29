@@ -232,23 +232,32 @@ func (c *tunControl) request(r *http.Request) ([]byte, string, error) {
 // Copy file providers as regular files into the private directory. os.Root
 // prevents an untrusted source symlink from escaping the user's data directory.
 func snapshotTunRules(compiled []byte, root *os.Root, dest string) error {
+	type fileProvider struct {
+		Type string `yaml:"type"`
+		Path string `yaml:"path"`
+	}
 	var config struct {
-		Providers map[string]struct {
-			Type string `yaml:"type"`
-			Path string `yaml:"path"`
-		} `yaml:"rule-providers"`
+		Rules   map[string]fileProvider `yaml:"rule-providers"`
+		Proxies map[string]fileProvider `yaml:"proxy-providers"`
 	}
 	if err := yaml.Unmarshal(compiled, &config); err != nil {
 		return err
 	}
 	var total int
-	for _, provider := range config.Providers {
+	providers := make([]fileProvider, 0, len(config.Rules)+len(config.Proxies))
+	for _, provider := range config.Rules {
+		providers = append(providers, provider)
+	}
+	for _, provider := range config.Proxies {
+		providers = append(providers, provider)
+	}
+	for _, provider := range providers {
 		if provider.Type != "file" {
 			continue
 		}
 		data, err := readRootFile(root, provider.Path, 16<<20)
 		if err != nil {
-			return fmt.Errorf("读取本地规则失败: %w", err)
+			return fmt.Errorf("读取本地提供器文件失败: %w", err)
 		}
 		total += len(data)
 		if total > 64<<20 {
@@ -370,6 +379,39 @@ func snapshotTunResources(compiled []byte, source *os.Root, dest string) ([]byte
 	}
 	if err := visit(config["proxies"], ""); err != nil {
 		return nil, err
+	}
+	if err := visit(config["proxy-providers"], ""); err != nil {
+		return nil, err
+	}
+	if providers, ok := config["proxy-providers"].(map[string]any); ok {
+		for _, value := range providers {
+			provider, ok := value.(map[string]any)
+			if !ok || provider["type"] != "file" {
+				continue
+			}
+			path, ok := provider["path"].(string)
+			if !ok || !filepath.IsLocal(path) {
+				return nil, errors.New("本地节点提供器路径无效")
+			}
+			data, err := os.ReadFile(filepath.Join(dest, path))
+			if err != nil {
+				return nil, err
+			}
+			var content map[string]any
+			if err := yaml.Unmarshal(data, &content); err != nil || content == nil {
+				continue // URI and Base64 provider files have no local file fields.
+			}
+			if err := visit(content["proxies"], ""); err != nil {
+				return nil, err
+			}
+			updated, err := yaml.Marshal(content)
+			if err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(filepath.Join(dest, path), updated, 0600); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return yaml.Marshal(config)
 }
