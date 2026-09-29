@@ -845,7 +845,7 @@ func (r *Runner) Groups() ([]Group, error) {
 			}
 			groups = append(groups, Group{Name: selector.Name, Current: current, Options: selector.Options})
 		}
-		sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		sortGroups(groups)
 		return groups, nil
 	}
 	var response struct {
@@ -864,8 +864,20 @@ func (r *Runner) Groups() ([]Group, error) {
 			groups = append(groups, Group{Name: name, Current: proxy.Now, Options: proxy.All})
 		}
 	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+	sortGroups(groups)
 	return groups, nil
+}
+
+func sortGroups(groups []Group) {
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].Name == "GLOBAL" {
+			return false
+		}
+		if groups[j].Name == "GLOBAL" {
+			return true
+		}
+		return groups[i].Name < groups[j].Name
+	})
 }
 
 func (r *Runner) NodeNames() ([]string, error) {

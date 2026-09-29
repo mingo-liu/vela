@@ -659,6 +659,43 @@ func TestGroupsAvailableBeforeCoreStarts(t *testing.T) {
 	}
 }
 
+func TestGroupsPlaceGlobalAfterRuleGroups(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if err := store.Import("proxies:\n  - name: Node A\n    type: socks5\n    server: example.com\n    port: 1080\nproxy-groups:\n  - name: Alpha\n    type: select\n    proxies: [Node A]\n  - name: tapfog\n    type: select\n    proxies: [Node A]\nrules: [MATCH,tapfog]\n"); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, nil, dir, "", 7890, nil, nil)
+	checkOrder := func(groups []Group, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(groups) != 3 || groups[0].Name != "Alpha" || groups[1].Name != "tapfog" || groups[2].Name != "GLOBAL" {
+			t.Fatalf("unexpected group order: %+v", groups)
+		}
+	}
+	checkOrder(runner.Groups())
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/proxies" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"proxies":{"GLOBAL":{"type":"Selector"},"tapfog":{"type":"Selector"},"Alpha":{"type":"Selector"}}}`))
+	}))
+	defer server.Close()
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.apiPort, err = strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.state.Status = "running"
+	checkOrder(runner.Groups())
+}
+
 func TestTrafficTotalsReadsAuthenticatedController(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
