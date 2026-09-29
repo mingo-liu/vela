@@ -233,6 +233,24 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .settings-routing + .setting-row { border-top: 0; }
 .settings-routing legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .settings-routing:disabled .routing-option { cursor: not-allowed; opacity: .58; }
+.diagnostics-panel { overflow: hidden; }
+.diagnostics-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; padding: 18px 22px; border-bottom: 1px solid #eceef1; }
+.diagnostics-tabs, .diagnostics-actions { display: flex; align-items: center; gap: 8px; }
+.diagnostics-tabs button { padding: 8px 13px; border: 0; border-radius: 9px; background: transparent; color: #62666d; font-size: 12px; font-weight: 700; }
+.diagnostics-tabs button.active { background: #fff0f2; color: #d90f3c; }
+.diagnostics-actions .text-field { width: min(250px, 35vw); padding: 9px 11px; }
+.diagnostics-summary { display: flex; flex-wrap: wrap; gap: 10px 28px; padding: 17px 22px; border-bottom: 1px solid #eceef1; color: #62666d; font-size: 12px; }
+.diagnostics-summary strong { color: #24272d; font-variant-numeric: tabular-nums; }
+.diagnostics-note { margin: 0; padding: 10px 22px; color: #62666d; font-size: 11px; }
+.diagnostics-list { max-height: min(62vh, 650px); overflow: auto; }
+.diagnostics-row { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(160px, 1fr) minmax(160px, 1fr); gap: 15px; padding: 14px 22px; border-bottom: 1px solid #f0f1f3; font-size: 12px; }
+.diagnostics-row:last-child { border-bottom: 0; }
+.diagnostics-row > div { display: grid; min-width: 0; gap: 5px; }
+.diagnostics-row strong, .diagnostics-row span, .diagnostics-row small { min-width: 0; overflow-wrap: anywhere; }
+.diagnostics-row strong { color: #24272d; }
+.diagnostics-row small { color: #7a7d84; }
+.diagnostics-rule { grid-template-columns: 45px minmax(90px, .5fr) minmax(160px, 1.5fr) minmax(100px, 1fr); }
+.diagnostics-index { color: #7a7d84; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 780px) {
   .sidebar { width: 190px; flex-basis: 190px; }
@@ -270,4 +288,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .settings-card { padding: 21px 19px; }
   .setting-row { gap: 10px; }
   .setting-row select { min-width: 112px; }
+  .diagnostics-row { grid-template-columns: 1fr; gap: 8px; }
+  .diagnostics-rule { grid-template-columns: 35px minmax(75px, .5fr) minmax(100px, 1.5fr); }
+  .diagnostics-rule > span:last-child { grid-column: 3; }
+  .diagnostics-actions .text-field { width: 150px; }
 }

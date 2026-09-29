@@ -9,8 +9,9 @@ import type { Settings } from '../bindings/github.com/mingo-liu/vela/internal/pr
 import { translate, localizeError, type Language } from './i18n'
 import TrafficMonitor from './TrafficMonitor'
 import ExitIPCard from './ExitIPCard'
+import Diagnostics from './Diagnostics'
 
-type Page = 'home' | 'proxies' | 'profiles' | 'logs' | 'settings'
+type Page = 'home' | 'proxies' | 'profiles' | 'diagnostics' | 'logs' | 'settings'
 type SortMode = 'name' | 'delay'
 type LogLevel = 'all' | 'error' | 'warning' | 'info' | 'debug' | 'other'
 const delayCacheDuration = 3 * 60 * 1000
@@ -25,6 +26,7 @@ const navigation = [
   { id: 'home', label: '首页', icon: House },
   { id: 'proxies', label: '代理', icon: GlobeHemisphereWest },
   { id: 'profiles', label: '配置', icon: Stack },
+  { id: 'diagnostics', label: '诊断', icon: ListBullets },
   { id: 'logs', label: '日志', icon: ListBullets },
   { id: 'settings', label: '设置', icon: GearSix },
 ] as const
@@ -482,6 +484,7 @@ export default function App() {
           <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>{t('导入订阅')}</h2></div></div><label className="field-label" htmlFor="subscription-url">{t('订阅链接')}</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={busy} autoComplete="off" spellCheck={false} placeholder={t('粘贴 HTTP / HTTPS 订阅地址')} onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={busy || !subscriptionURL} onClick={() => void importSubscription()}>{t('导入订阅')} <ArrowRight size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">{t('此地址使用 HTTP，访问令牌会在网络上传输明文。')}</small>}</section>
         </div>
       </>}
+      {page === 'diagnostics' && <Diagnostics connected={connected && running} language={language} profileRevision={profileRevision} />}
       {page === 'logs' && <>
         <div className="page-heading"><h1>{t('日志')}</h1></div>
         {logsError && <div className="alert" role="alert">{localizeError(language, logsError)}</div>}

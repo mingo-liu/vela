@@ -151,6 +151,14 @@ rules:
 	if len(groups) == 0 {
 		t.Fatal("no selector groups from controller")
 	}
+	rules, err := runner.Rules()
+	if err != nil || len(rules) < 2 {
+		t.Fatalf("rules diagnostic failed: %+v, %v", rules, err)
+	}
+	connections, err := runner.Connections()
+	if err != nil || connections.Total < 0 {
+		t.Fatalf("connections diagnostic failed: %+v, %v", connections, err)
+	}
 	if err := runner.Select("Choose", "REJECT"); err != nil {
 		t.Fatal(err)
 	}

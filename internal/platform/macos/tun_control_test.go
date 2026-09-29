@@ -90,7 +90,7 @@ func TestTunControlRecompilesReloadAndPreservesOperations(t *testing.T) {
 	go upstream.Serve(listener)
 	defer upstream.Close()
 	calls := []struct{ method, path, body string }{
-		{"GET", "/version", ""}, {"GET", "/connections", ""}, {"GET", "/proxies", ""},
+		{"GET", "/version", ""}, {"GET", "/connections", ""}, {"GET", "/proxies", ""}, {"GET", "/rules", ""},
 		{"PATCH", "/configs", `{"mode":"global"}`},
 		{"PUT", "/proxies/a%2Fb", `{"name":"DIRECT"}`},
 		{"GET", "/proxies/a%2Fb/delay?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000", ""},

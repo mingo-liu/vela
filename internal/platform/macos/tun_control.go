@@ -150,7 +150,7 @@ func (c *tunControl) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (c *tunControl) request(r *http.Request) ([]byte, string, error) {
 	denied := errors.New("operation not permitted")
 	path := r.URL.Path
-	if r.Method == http.MethodGet && (path == "/version" || path == "/connections" || path == "/proxies") && r.URL.RawQuery == "" {
+	if r.Method == http.MethodGet && (path == "/version" || path == "/connections" || path == "/proxies" || path == "/rules") && r.URL.RawQuery == "" {
 		return nil, path, nil
 	}
 	if path == "/configs" {

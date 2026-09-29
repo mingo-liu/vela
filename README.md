@@ -28,6 +28,7 @@ Vela is a macOS proxy client built with Wails v3, React, and mihomo. It provides
 - Switch between Rule, Global, and Direct routing modes.
 - Connect through the system proxy or Tun mode. These modes are mutually exclusive.
 - Configure startup behavior, local proxy port, log level, and interface language. Closing the window keeps Vela in the menu bar; quitting stops the core.
+- Inspect active connections, proxy traffic, proxy chains, and loaded rules in Diagnostics.
 
 ## Build and run
 
@@ -48,6 +49,7 @@ See [security boundaries and verification](docs/security.md) for TUN isolation, 
 **System proxy** starts mihomo and updates the macOS proxy settings. It affects apps that follow those settings; it does not cover apps that ignore them or UDP traffic. Vela restores the previous settings when disconnected and attempts to restore them if the GUI exits unexpectedly.
 
 The local mixed proxy listens on `127.0.0.1:7890` by default.
+The sidebar speed chart shows system interface traffic; Diagnostics shows proxy traffic reported by the core.
 
 To remove the authorized Tun service, quit Vela and run:
 

@@ -11,7 +11,7 @@ The GeoIP and GeoSite databases are installed with the core and verified before 
 
 The GUI's controller token only authorizes the restricted loopback gateway. The
 full Mihomo API is accessible through the private Unix socket. The gateway permits
-version, traffic and proxy queries, node selection, the fixed delay probe, routing
+version, traffic, rule and proxy queries, node selection, the fixed delay probe, routing
 mode changes, and validated configuration reloads. Every reload passes through
 the profile compiler again, fixing listeners, controller, secret, TUN and provider
 paths. Restart, upgrade, arbitrary path reloads, unrestricted PATCH fields, and
@@ -44,7 +44,6 @@ storage after checking ownership, type, size, and directory confinement.
 Inline and local provider node credentials are snapshotted into private storage.
 HTTP proxy providers are rejected in TUN mode because the privileged core would
 otherwise load remote node data without Vela checking local credential paths.
-
 
 Local certificate/private-key/planet files must be readable files owned by the
 user inside Vela's data directory. They are snapshotted for TUN on startup and

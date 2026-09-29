@@ -186,3 +186,11 @@ func (s *RuntimeService) TestGroupDelay(group string) (map[string]int, error) {
 func (s *RuntimeService) Select(group, option string) error {
 	return s.runner.Select(group, option)
 }
+
+func (s *RuntimeService) Connections() (mihomo.ConnectionSnapshot, error) {
+	return s.runner.Connections()
+}
+
+func (s *RuntimeService) Rules() ([]mihomo.Rule, error) {
+	return s.runner.Rules()
+}
