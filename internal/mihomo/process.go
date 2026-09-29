@@ -383,13 +383,19 @@ func (r *Runner) start(tun bool) (State, error) {
 		if err := writePrivate(configPath, compiled); err != nil {
 			return r.fail(err)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		check := exec.CommandContext(ctx, r.binary, "-t", "-d", r.dataDir, "-f", configPath)
-		check.Env = cleanEnv()
-		_, err = check.CombinedOutput()
-		cancel()
-		if err != nil {
-			return r.fail(fmt.Errorf("内核配置校验失败（%v）；请检查节点与规则内容", err))
+		// Starting mihomo parses the same config. For the system proxy we can
+		// wait for readiness before changing macOS settings instead of launching
+		// a second process solely to validate it. Keep the check for Tun so an
+		// invalid config cannot trigger an unnecessary authorization prompt.
+		if tun {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			check := exec.CommandContext(ctx, r.binary, "-t", "-d", r.dataDir, "-f", configPath)
+			check.Env = cleanEnv()
+			_, err = check.CombinedOutput()
+			cancel()
+			if err != nil {
+				return r.fail(fmt.Errorf("内核配置校验失败（%v）；请检查节点与规则内容", err))
+			}
 		}
 		var cmd *exec.Cmd
 		if tun {

@@ -206,6 +206,29 @@ rules:
 	}
 }
 
+func TestSystemProxyInvalidConfigDoesNotEnableWithRealCore(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO to run the real core integration test")
+	}
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if err := store.Import("proxy-groups:\n  - name: Bad\n    type: select\n    proxies: [Missing]\nrules:\n  - MATCH,DIRECT\n"); err != nil {
+		t.Fatal(err)
+	}
+	systemProxy := &testSystemProxy{}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, systemProxy, nil)
+	t.Cleanup(runner.Close)
+	state, err := runner.SetSystemProxy(true)
+	if err == nil || state.Status != "failed" || state.SystemProxyEnabled || systemProxy.enabled {
+		t.Fatalf("invalid config enabled the system proxy: %+v, %v", state, err)
+	}
+}
+
 func TestRoutingModeOfflineAndControllerUpdate(t *testing.T) {
 	dir := t.TempDir()
 	store := profile.NewStore(dir)
