@@ -17,7 +17,7 @@
         PackageDisplayName="Vela"
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
-        Version="0.1.0.0"
+        Version="0.2.0.0"
         PackageDescription="Vela desktop prototype">
         <Capabilities>
             <Capability Name="runFullTrust" />
