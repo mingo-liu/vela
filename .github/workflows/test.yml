@@ -50,6 +50,9 @@ jobs:
       - name: Build security-maintained core
         run: sh scripts/prepare-mihomo.sh
 
+      - name: Prepare GeoIP database
+        run: sh scripts/prepare-geodata.sh
+
       - name: Run Go and real-core regression tests
         run: VELA_TEST_MIHOMO="$PWD/build/resources/mihomo" go test -race ./...
 
