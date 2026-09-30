@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { LinkSimple, X } from '@phosphor-icons/react'
-import { localizeError, translate, type Language } from './i18n'
+import { localizeError, translate, type Language } from '../../i18n'
 
 type Props = {
   url: string

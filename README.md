@@ -68,6 +68,9 @@ npm --prefix frontend run typecheck
 npm --prefix frontend test
 ```
 
+See [code organization](docs/architecture.md) for frontend feature boundaries and
+backend Runner responsibilities.
+
 ## License
 
 [MIT](LICENSE)

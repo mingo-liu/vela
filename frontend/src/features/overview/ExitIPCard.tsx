@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ArrowClockwise, Eye, EyeSlash, MapPin } from '@phosphor-icons/react'
-import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
-import type { ExitIPInfo, Group } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
-import { localizeError, translate, type Language } from './i18n'
-import { usePolling } from './lib/usePolling'
+import * as Runtime from '../../../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
+import type { ExitIPInfo, Group } from '../../../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
+import { localizeError, translate, type Language } from '../../i18n'
+import { usePolling } from '../../lib/usePolling'
 
 const REFRESH_SECONDS = 300
 

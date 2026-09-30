@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp } from '@phosphor-icons/react'
-import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
-import { translate, type Language } from './i18n'
-import { usePolling } from './lib/usePolling'
+import * as Runtime from '../../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
+import { translate, type Language } from '../i18n'
+import { usePolling } from '../lib/usePolling'
 
 type Sample = { upload: number; download: number }
 

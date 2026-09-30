@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Trash, X } from '@phosphor-icons/react'
-import { localizeError, translate, type Language } from './i18n'
+import { localizeError, translate, type Language } from '../../i18n'
 
 type Props = {
   domain: string

@@ -68,6 +68,8 @@ npm --prefix frontend run typecheck
 npm --prefix frontend test
 ```
 
+前端功能划分和后端 Runner 的职责边界见[代码结构说明](docs/architecture.md)。
+
 ## 许可证
 
 [MIT](LICENSE)
