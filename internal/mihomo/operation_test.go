@@ -252,3 +252,30 @@ func TestTemporaryDelayCoreDoesNotStopReplacementConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAutomaticUpdatesWaitForInteractiveTaskAndStopAfterClose(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	urls := &testURLStore{value: `{"subscriptions":[{"id":"saved","url":"http://127.0.0.1:1/never","active":false}]}`}
+	subs := profile.NewSubscriptions(store, urls)
+	runner := NewRunner(store, subs, dir, "", 7890, nil, nil)
+	_, taskID, err := runner.beginOperation("delay", "Choose", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.UpdateDueSubscriptions(time.Now(), time.Hour)
+	items, _ := runner.Subscriptions()
+	if items[0].LastAttemptAt != nil || items[0].LastUpdateError != "" {
+		t.Fatal("background updates interfered with the interactive task")
+	}
+	runner.finishOperation(taskID)
+	runner.Close()
+	runner.UpdateDueSubscriptions(time.Now(), time.Hour)
+	items, _ = runner.Subscriptions()
+	if items[0].LastAttemptAt != nil || items[0].LastUpdateError != "" {
+		t.Fatal("background update ran after shutdown")
+	}
+	if _, err := runner.ImportSubscription(items[0].URL); !errors.Is(err, ErrRunnerClosed) {
+		t.Fatalf("download started after shutdown: %v", err)
+	}
+}

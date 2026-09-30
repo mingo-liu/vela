@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp } from '@phosphor-icons/react'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import { translate, type Language } from './i18n'
+import { usePolling } from './lib/usePolling'
 
 type Sample = { upload: number; download: number }
 
@@ -31,40 +32,32 @@ function chartPath(history: Sample[], key: keyof Sample, max: number): string {
   }, '')
 }
 
-export default function TrafficMonitor({ language }: { language: Language }) {
+export default function TrafficMonitor({ language, visible }: { language: Language; visible: boolean }) {
   const [history, setHistory] = useState<Sample[]>(initialHistory)
 
-  useEffect(() => {
-    let active = true
-    let pending = false
-    let previous: { upload: number; download: number; interface: string; time: number } | null = null
-    const refresh = async () => {
-      if (pending) return
-      pending = true
-      let sample = zero
-      try {
-        const totals = await Runtime.TrafficTotals()
-        const now = Date.now()
-        if (previous && previous.interface === totals.interface) {
-          const seconds = Math.max((now - previous.time) / 1000, 0.001)
-          sample = {
-            upload: Math.max(0, (totals.uploadTotal - previous.upload) / seconds),
-            download: Math.max(0, (totals.downloadTotal - previous.download) / seconds),
-          }
-        }
-        previous = { upload: totals.uploadTotal, download: totals.downloadTotal, interface: totals.interface, time: now }
-      } catch {
-        previous = null
-      } finally {
-        pending = false
-      }
-      if (active) setHistory(current => [...current.slice(1), sample])
-    }
+  const previous = useRef<{ upload: number; download: number; interface: string; time: number } | null>(null)
+  useEffect(() => { previous.current = null }, [visible])
 
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 1000)
-    return () => { active = false; window.clearInterval(timer) }
-  }, [])
+  usePolling(async isCurrent => {
+    let sample = zero
+    try {
+      const totals = await Runtime.TrafficTotals()
+      if (!isCurrent()) return
+      const now = Date.now()
+      const last = previous.current
+      if (last && last.interface === totals.interface) {
+        const seconds = Math.max((now - last.time) / 1000, 0.001)
+        sample = {
+          upload: Math.max(0, (totals.uploadTotal - last.upload) / seconds),
+          download: Math.max(0, (totals.downloadTotal - last.download) / seconds),
+        }
+      }
+      previous.current = { upload: totals.uploadTotal, download: totals.downloadTotal, interface: totals.interface, time: now }
+    } catch {
+      if (isCurrent()) previous.current = null
+    }
+    if (isCurrent()) setHistory(current => [...current.slice(1), sample])
+  }, visible ? 1000 : null)
 
   const latest = history[history.length - 1]
   const upload = formatRate(latest.upload)

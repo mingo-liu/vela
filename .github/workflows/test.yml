@@ -44,6 +44,9 @@ jobs:
       - name: Check frontend types
         run: npm --prefix frontend run typecheck
 
+      - name: Test frontend refresh lifecycle
+        run: npm --prefix frontend test
+
       - name: Build frontend for Go embedding
         run: npm --prefix frontend run build
 

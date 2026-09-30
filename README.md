@@ -24,11 +24,13 @@ Vela is a macOS proxy client built with Wails v3, React, and mihomo. It provides
 - Import a local mihomo YAML file or an HTTP/HTTPS subscription; edit, remove, and automatically refresh subscriptions, and switch the active configuration.
 - Use proxy providers, rule providers, Sniffer, GeoIP, and GeoSite rules in profiles. Local proxy-provider files must be under `providers/` or `proxies/` in Vela's data directory.
 - Tun mode supports inline and local proxy providers; HTTP proxy providers are available in system proxy mode.
-- Choose nodes in manual proxy groups, measure latency, and sort nodes by name or latency.
+- Choose nodes in manual proxy groups, including provider nodes, measure latency, and sort by name or latency. Valid node choices survive subscription updates.
+- View task progress and cancel subscription downloads or latency tests; disconnect without waiting for probes.
 - Switch between Rule, Global, and Direct routing modes.
 - Connect through the system proxy or Tun mode. These modes are mutually exclusive.
 - Configure startup behavior, local proxy port, log level, and interface language. Closing the window keeps Vela in the menu bar; quitting stops the core.
 - Inspect active connections, proxy traffic, proxy chains, and loaded rules in Diagnostics.
+- Pause periodic interface refreshes while the window is hidden or minimised, and refresh immediately when shown. Proxy connections keep running.
 
 ## Build and run
 
@@ -63,6 +65,7 @@ bin/vela --vela-tun-uninstall
 go test ./...
 go vet ./...
 npm --prefix frontend run typecheck
+npm --prefix frontend test
 ```
 
 ## License

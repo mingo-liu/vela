@@ -63,6 +63,7 @@ const delayTestURL = "https://www.gstatic.com/generate_204"
 type Runner struct {
 	operationMu     sync.Mutex
 	taskMu          sync.Mutex
+	closed          bool
 	taskProgress    OperationProgress
 	taskCancel      context.CancelFunc
 	onProgress      func(OperationProgress)
@@ -360,7 +361,7 @@ func (r *Runner) ReplaceSubscriptionURL(id, address string) (State, error) {
 // UpdateDueSubscriptions is called by the app scheduler. It never changes the
 // selected subscription when refreshing an inactive one.
 func (r *Runner) UpdateDueSubscriptions(now time.Time, interval time.Duration) {
-	if interval <= 0 {
+	if interval <= 0 || r.Operation().Active {
 		return
 	}
 	items, err := r.Subscriptions()
@@ -381,11 +382,12 @@ func (r *Runner) UpdateDueSubscriptions(now time.Time, interval time.Duration) {
 			updateErr = r.refreshInactiveSubscription(item.ID)
 		}
 		if updateErr != nil {
+			if errors.Is(updateErr, ErrOperationBusy) || errors.Is(updateErr, ErrOperationCancelled) || errors.Is(updateErr, ErrRunnerClosed) {
+				return
+			}
 			r.operationMu.Lock()
 			r.mu.Lock()
-			if !errors.Is(updateErr, ErrOperationCancelled) {
-				_ = r.subs.RecordUpdateError(item.ID, updateErr)
-			}
+			_ = r.subs.RecordUpdateError(item.ID, updateErr)
 			r.mu.Unlock()
 			r.operationMu.Unlock()
 		}
@@ -1326,6 +1328,9 @@ func (r *Runner) writeControllerSelection(group, option string) error {
 }
 
 func (r *Runner) Close() {
+	r.taskMu.Lock()
+	r.closed = true
+	r.taskMu.Unlock()
 	r.CancelOperation(0)
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()

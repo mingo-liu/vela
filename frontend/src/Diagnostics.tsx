@@ -3,6 +3,7 @@ import { ArrowClockwise } from '@phosphor-icons/react'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { ConnectionSnapshot, Rule } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import { localizeError, translate, type Language } from './i18n'
+import { usePolling } from './lib/usePolling'
 
 function bytes(value: number): string {
   if (value < 1024) return `${value} B`
@@ -11,7 +12,7 @@ function bytes(value: number): string {
   return `${(value / 1024 ** (index + 1)).toFixed(1)} ${units[index]}`
 }
 
-export default function Diagnostics({ connected, language, profileRevision }: { connected: boolean; language: Language; profileRevision: number }) {
+export default function Diagnostics({ connected, language, profileRevision, visible }: { connected: boolean; language: Language; profileRevision: number; visible: boolean }) {
   const t = (value: string) => translate(language, value)
   const [tab, setTab] = useState<'connections' | 'rules'>('connections')
   const [snapshot, setSnapshot] = useState<ConnectionSnapshot | null>(null)
@@ -21,31 +22,23 @@ export default function Diagnostics({ connected, language, profileRevision }: { 
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    if (!connected) { setSnapshot(null); setRules([]); setError(''); return }
-    let active = true
-    let pending = false
-    const refresh = async () => {
-      if (pending) return
-      pending = true
-      try {
-        if (tab === 'connections') {
-          const value = await Runtime.Connections()
-          if (active) setSnapshot(value)
-        } else {
-          const value = await Runtime.Rules()
-          if (active) setRules(value ?? [])
-        }
-        if (active) setError('')
-      } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause))
-      } finally {
-        pending = false
+    if (!connected) { setSnapshot(null); setRules([]); setError('') }
+  }, [connected])
+
+  usePolling(async isCurrent => {
+    try {
+      if (tab === 'connections') {
+        const value = await Runtime.Connections()
+        if (isCurrent()) setSnapshot(value)
+      } else {
+        const value = await Runtime.Rules()
+        if (isCurrent()) setRules(value ?? [])
       }
+      if (isCurrent()) setError('')
+    } catch (cause) {
+      if (isCurrent()) setError(cause instanceof Error ? cause.message : String(cause))
     }
-    void refresh()
-    const timer = tab === 'connections' ? window.setInterval(() => void refresh(), 3000) : undefined
-    return () => { active = false; if (timer) window.clearInterval(timer) }
-  }, [connected, tab, profileRevision, refreshKey])
+  }, !connected || !visible ? null : tab === 'connections' ? 3000 : 0, `${tab}:${profileRevision}:${refreshKey}`)
 
   const query = filter.trim().toLowerCase()
   const connections = (snapshot?.connections ?? []).filter(item => {

@@ -62,11 +62,12 @@ func Run(assets fs.FS) error {
 		}))
 	}
 	var updateMenuLanguage func(string)
+	var window *application.WebviewWindow
 	service := desktop.NewRuntimeService(runner, store, dataDir, func(language string) {
 		if updateMenuLanguage != nil {
 			updateMenuLanguage(language)
 		}
-	})
+	}, func() bool { return window != nil && window.IsVisible() && !window.IsMinimised() })
 	wails = application.New(application.Options{
 		Name:        "Vela",
 		Description: "Vela local proxy",
@@ -75,10 +76,16 @@ func Run(assets fs.FS) error {
 		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
 		OnShutdown:  func() { close(stopUpdates); runner.Close() },
 	})
-	window := wails.Window.NewWithOptions(application.WebviewWindowOptions{
+	window = wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Vela", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 480,
 		URL: "/", BackgroundColour: application.NewRGB(255, 255, 255),
 	})
+	for _, eventType := range []events.WindowEventType{events.Common.WindowHide, events.Common.WindowShow, events.Common.WindowMinimise, events.Common.WindowUnMinimise} {
+		visible := eventType == events.Common.WindowShow || eventType == events.Common.WindowUnMinimise
+		window.OnWindowEvent(eventType, func(_ *application.WindowEvent) {
+			wails.Event.Emit("window-visibility", visible)
+		})
+	}
 	window.RegisterHook(events.Mac.WindowShouldClose, func(event *application.WindowEvent) {
 		window.Hide()
 		event.Cancel()

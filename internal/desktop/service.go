@@ -19,10 +19,11 @@ type RuntimeService struct {
 	dataDir          string
 	settingsMu       sync.Mutex
 	onLanguageChange func(string)
+	windowVisible    func() bool
 }
 
-func NewRuntimeService(runner *mihomo.Runner, store *profile.Store, dataDir string, onLanguageChange func(string)) *RuntimeService {
-	return &RuntimeService{runner: runner, store: store, dataDir: dataDir, onLanguageChange: onLanguageChange}
+func NewRuntimeService(runner *mihomo.Runner, store *profile.Store, dataDir string, onLanguageChange func(string), windowVisible func() bool) *RuntimeService {
+	return &RuntimeService{runner: runner, store: store, dataDir: dataDir, onLanguageChange: onLanguageChange, windowVisible: windowVisible}
 }
 
 func (s *RuntimeService) SetLanguage(language string) (profile.Settings, error) {
@@ -37,6 +38,10 @@ func (s *RuntimeService) SetLanguage(language string) (profile.Settings, error) 
 		s.onLanguageChange(language)
 	}
 	return settings, err
+}
+
+func (s *RuntimeService) WindowVisible() bool {
+	return s.windowVisible == nil || s.windowVisible()
 }
 
 func (s *RuntimeService) State() mihomo.State { return s.runner.Snapshot() }

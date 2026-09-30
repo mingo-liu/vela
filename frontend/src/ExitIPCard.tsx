@@ -3,6 +3,7 @@ import { ArrowClockwise, Eye, EyeSlash, MapPin } from '@phosphor-icons/react'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { ExitIPInfo, Group } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import { localizeError, translate, type Language } from './i18n'
+import { usePolling } from './lib/usePolling'
 
 const REFRESH_SECONDS = 300
 
@@ -10,8 +11,9 @@ function display(value: string | undefined, fallback: string) {
   return value?.trim() || fallback
 }
 
-export default function ExitIPCard({ connected, groups, language, profileRevision, routingMode }: {
+export default function ExitIPCard({ connected, groups, language, profileRevision, routingMode, visible }: {
   connected: boolean
+  visible: boolean
   groups: Group[]
   language: Language
   profileRevision: number
@@ -36,45 +38,30 @@ export default function ExitIPCard({ connected, groups, language, profileRevisio
   useEffect(() => setFlagFailed(false), [info?.countryCode])
 
   useEffect(() => {
-    if (!connected) {
-      setInfo(null)
-      setError('')
-      setLoading(false)
-      setNextRefresh(0)
-      return
-    }
-    let active = true
-    let timer: number | undefined
     setInfo(null)
     setError('')
-    setLoading(true)
-    const refresh = async () => {
-      setLoading(true)
-      try {
-        const result = await Runtime.ExitIPInfo()
-        if (active) { setInfo(result); setError('') }
-      } catch (cause) {
-        if (active) {
-          setInfo(null)
-          setError(cause instanceof Error ? cause.message : String(cause))
-        }
-      } finally {
-        if (active) {
-          setLoading(false)
-          setNextRefresh(Date.now() + REFRESH_SECONDS * 1000)
-          timer = window.setTimeout(() => { void refresh() }, REFRESH_SECONDS * 1000)
-        }
-      }
-    }
-    void refresh()
-    return () => { active = false; window.clearTimeout(timer) }
-  }, [connected, profileRevision, refreshKey, routingMode, selection])
+    setLoading(false)
+    setNextRefresh(0)
+  }, [connected, profileRevision, routingMode, selection])
 
-  useEffect(() => {
-    if (!connected) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [connected])
+  usePolling(async isCurrent => {
+    setLoading(true)
+    try {
+      const result = await Runtime.ExitIPInfo()
+      if (isCurrent()) { setInfo(result); setError('') }
+    } catch (cause) {
+      if (isCurrent()) {
+        setInfo(null)
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    } finally {
+      if (isCurrent()) { setLoading(false); setNextRefresh(Date.now() + REFRESH_SECONDS * 1000) }
+    }
+  }, connected && visible ? REFRESH_SECONDS * 1000 : null, JSON.stringify([profileRevision, refreshKey, routingMode, selection]))
+
+  usePolling(async isCurrent => {
+    if (isCurrent()) setNow(Date.now())
+  }, connected && visible ? 1000 : null)
 
   const remaining = Math.max(0, Math.ceil((nextRefresh - now) / 1000))
   const missing = t('未提供')

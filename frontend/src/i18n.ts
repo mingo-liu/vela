@@ -180,6 +180,7 @@ const englishErrors: Record<string, string> = {
   '已有任务正在执行，请稍后重试': 'A task is already running. Please try again later',
   '订阅地址已改变，请重新下载': 'The subscription URL changed. Please download it again',
   '任务已结束': 'The task has ended',
+  '应用正在退出': 'The application is closing',
   '本地代理端口必须在 1024–65535 之间': 'Local proxy port must be between 1024 and 65535',
   '配置文件不能超过 2 MiB': 'Profile file must not exceed 2 MiB',
   '无法读取已保存的节点选择': 'Could not read saved node selection',

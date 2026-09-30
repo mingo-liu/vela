@@ -6,7 +6,11 @@ import (
 	"time"
 )
 
-var ErrOperationCancelled = errors.New("操作已取消")
+var (
+	ErrOperationCancelled = errors.New("操作已取消")
+	ErrOperationBusy      = errors.New("已有任务正在执行，请稍后重试")
+	ErrRunnerClosed       = errors.New("应用正在退出")
+)
 
 // OperationProgress describes a cancellable download or node delay test.
 // Subscription addresses and controller credentials are never included.
@@ -51,8 +55,11 @@ func (r *Runner) CancelOperation(id uint64) bool {
 func (r *Runner) beginOperation(kind, target string, total int) (context.Context, uint64, error) {
 	r.taskMu.Lock()
 	defer r.taskMu.Unlock()
+	if r.closed {
+		return nil, 0, ErrRunnerClosed
+	}
 	if r.taskProgress.Active {
-		return nil, 0, errors.New("已有任务正在执行，请稍后重试")
+		return nil, 0, ErrOperationBusy
 	}
 	timeout := 25 * time.Second
 	phase := "downloading"

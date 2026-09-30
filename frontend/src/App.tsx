@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, FolderOpen, GearSix, GlobeHemisphereWest, House, LinkSimple, ListBullets, PencilSimple, Stack, Trash, WifiMedium } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import velaIcon from '../../build/appicon.png'
@@ -10,6 +10,9 @@ import { translate, localizeError, type Language } from './i18n'
 import TrafficMonitor from './TrafficMonitor'
 import ExitIPCard from './ExitIPCard'
 import Diagnostics from './Diagnostics'
+import { usePolling } from './lib/usePolling'
+import { useWindowVisible } from './lib/useWindowVisible'
+import { createSnapshotReceiver } from './lib/snapshot'
 
 type Page = 'home' | 'proxies' | 'profiles' | 'diagnostics' | 'logs' | 'settings'
 type SortMode = 'name' | 'delay'
@@ -93,6 +96,10 @@ function SortModeIcon({ mode }: { mode: SortMode }) {
 export default function App() {
   const [page, setPage] = useState<Page>('home')
   const [state, setState] = useState<State>(empty)
+  const visible = useWindowVisible()
+  const [stateReceiver] = useState(() => createSnapshotReceiver<State>(value => {
+    setState(previous => (Object.keys(value) as (keyof State)[]).every(key => previous[key] === value[key]) ? previous : value)
+  }))
   const [groups, setGroups] = useState<Group[]>([])
   const [groupsRevision, setGroupsRevision] = useState(-1)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
@@ -109,6 +116,7 @@ export default function App() {
   const startAction = () => { pendingActions.current++; setBusy(true) }
   const finishAction = () => { pendingActions.current--; setBusy(pendingActions.current > 0) }
   const [operation, setOperation] = useState<OperationProgress | null>(null)
+  const [operationReceiver] = useState(() => createSnapshotReceiver<OperationProgress>(setOperation))
   const controlsBusy = busy || operation?.active === true
   const [notice, setNotice] = useState('')
   const [subscriptionURL, setSubscriptionURL] = useState('')
@@ -135,16 +143,17 @@ export default function App() {
     return text === '操作已取消' ? '' : text
   }
 
-  useEffect(() => {
-    let active = true
-    let receivedEvent = false
-    const unsubscribe = Events.On('operation-progress', event => {
-      receivedEvent = true
-      if (active) setOperation(event.data as OperationProgress)
-    })
-    void Runtime.Operation().then(value => { if (active && !receivedEvent) setOperation(value) }).catch(() => {})
-    return () => { active = false; unsubscribe() }
-  }, [])
+  useEffect(() => Events.On('operation-progress', event => operationReceiver.receive(event.data as OperationProgress)), [operationReceiver])
+  useEffect(() => Events.On('runtime-state', event => stateReceiver.receive(event.data as State)), [stateReceiver])
+
+  usePolling(async isCurrent => {
+    try { await operationReceiver.refresh(Runtime.Operation, isCurrent) } catch { /* recover on the next poll */ }
+  }, visible ? 30000 : 120000)
+
+  usePolling(async isCurrent => {
+    try { await stateReceiver.refresh(Runtime.State, isCurrent) }
+    catch (error) { if (isCurrent()) setNotice(message(error)) }
+  }, visible ? 30000 : 120000)
 
   const cancelOperation = async () => {
     if (!operation?.active || !operation.cancellable) return
@@ -156,21 +165,14 @@ export default function App() {
   useEffect(() => Events.On('open-settings', () => setPage('settings')), [])
   useEffect(() => Events.On('open-logs', () => setPage('logs')), [])
 
-  useEffect(() => {
-    if (page !== 'logs') return
-    let active = true
-    const refresh = async () => {
-      try {
-        const value = await Runtime.Logs()
-        if (active) { setLogs(value); setLogsError('') }
-      } catch (error) {
-        if (active) setLogsError(message(error))
-      }
+  usePolling(async isCurrent => {
+    try {
+      const value = await Runtime.Logs()
+      if (isCurrent()) { setLogs(value); setLogsError('') }
+    } catch (error) {
+      if (isCurrent()) setLogsError(message(error))
     }
-    void refresh()
-    const timer = window.setInterval(refresh, 1500)
-    return () => { active = false; window.clearInterval(timer) }
-  }, [page])
+  }, visible && page === 'logs' ? 1500 : null)
 
   useEffect(() => {
     if (page === 'logs' && followLogs.current && logList.current) {
@@ -195,35 +197,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    let active = true
-    const refresh = async () => {
-      try {
-        const next = await Runtime.State()
-        if (active) setState(next)
-      } catch (error) {
-        if (active) setNotice(message(error))
-      }
-    }
-    void refresh()
-    const timer = window.setInterval(refresh, 1500)
-    return () => { active = false; window.clearInterval(timer) }
-  }, [])
-
-  useEffect(() => {
     if (!state.hasProfile) { setGroups([]); setGroupsRevision(profileRevision); return }
+    if (!visible) return
     let active = true
     Runtime.Groups().then(value => { if (active) { setGroups(value ?? []); setGroupsRevision(profileRevision) } })
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
-  }, [state.status, state.hasProfile, profileRevision])
+  }, [visible, state.status, state.hasProfile, profileRevision])
 
   useEffect(() => {
     if (!state.hasProfile) { setNodeNames([]); return }
+    if (!visible) return
     let active = true
     Runtime.NodeNames().then(value => { if (active) setNodeNames(value ?? []) })
       .catch(error => { if (active) setNotice(message(error)) })
     return () => { active = false }
-  }, [state.hasProfile, profileRevision])
+  }, [visible, state.hasProfile, profileRevision])
 
   useEffect(() => {
     delayCache.current = {}
@@ -231,18 +220,14 @@ export default function App() {
     setMeasuredGroups({})
   }, [profileRevision])
 
-  useEffect(() => {
-    let active = true
-    Runtime.Subscriptions().then(value => { if (active) setSubscriptions(value ?? []) })
-      .catch(error => { if (active) setNotice(message(error)) })
-    return () => { active = false }
-  }, [])
-
-  useEffect(() => {
-    if (page !== 'profiles') return
-    const timer = window.setInterval(() => { void Runtime.Subscriptions().then(value => setSubscriptions(value ?? [])).catch(() => {}) }, 30000)
-    return () => window.clearInterval(timer)
-  }, [page])
+  usePolling(async isCurrent => {
+    try {
+      const value = await Runtime.Subscriptions()
+      if (isCurrent()) setSubscriptions(value ?? [])
+    } catch (error) {
+      if (isCurrent()) setNotice(message(error))
+    }
+  }, visible && page === 'profiles' ? 30000 : null)
 
   const refreshSubscriptions = async () => {
     try {
@@ -256,11 +241,11 @@ export default function App() {
     startAction()
     setNotice('')
     try {
-      setState(await action())
+      stateReceiver.receive(await action())
       return true
     } catch (error) {
       setNotice(message(error))
-      setState(await Runtime.State().catch(() => state))
+      await stateReceiver.refresh(Runtime.State, () => true).catch(() => {})
       return false
     } finally {
       finishAction()
@@ -335,14 +320,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (page !== 'proxies' || state.status !== 'running' || !state.hasProfile || controlsBusy || testingGroupRef.current || groupsRevision !== profileRevision) return
+    if (!visible || page !== 'proxies' || state.status !== 'running' || !state.hasProfile || controlsBusy || testingGroupRef.current || groupsRevision !== profileRevision) return
     const group = groups.find((candidate, index) => {
       if (!(expandedGroups[candidate.name] ?? index === 0) || !candidate.options?.length) return false
       const cached = delayCache.current[candidate.name]
       return !cached || cached.options !== JSON.stringify(candidate.options) || Date.now() - cached.testedAt >= delayCacheDuration
     })
     if (group) void testGroupDelay(group.name)
-  }, [page, state.status, state.hasProfile, controlsBusy, groups, groupsRevision, expandedGroups, completedDelayTests, profileRevision])
+  }, [visible, page, state.status, state.hasProfile, controlsBusy, groups, groupsRevision, expandedGroups, completedDelayTests, profileRevision])
 
   const toggleGroupSort = (group: string) => {
     const next = (sortModes[group] ?? 'name') === 'name' ? 'delay' : 'name'
@@ -403,8 +388,8 @@ export default function App() {
 
   const running = state.status === 'running'
   const connected = state.systemProxyEnabled || state.tunEnabled
-  const logLines = logs.split(/\r?\n/).filter(line => line.trim() !== '')
-  const visibleLogLines = logLines.map(line => ({ line, level: logLevel(line) })).filter(entry => selectedLogLevel === 'all' || entry.level === selectedLogLevel)
+  const logLines = useMemo(() => logs.split(/\r?\n/).filter(line => line.trim() !== ''), [logs])
+  const visibleLogLines = useMemo(() => logLines.map(line => ({ line, level: logLevel(line) })).filter(entry => selectedLogLevel === 'all' || entry.level === selectedLogLevel), [logLines, selectedLogLevel])
 
   return <div className="app-layout">
     <aside className="sidebar" aria-label={t('主导航')}>
@@ -412,7 +397,7 @@ export default function App() {
       <nav className="navigation" aria-label={t('页面')}>
         {navigation.map(item => <button key={item.id} type="button" className={`nav-item${page === item.id ? ' active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><item.icon size={25} weight="regular" /><span>{t(item.label)}</span></button>)}
       </nav>
-      <TrafficMonitor language={language} />
+      <TrafficMonitor language={language} visible={visible} />
       <div className="sidebar-footer"><span className={`sidebar-dot${connected ? ' connected' : ''}`} /><div><strong>{connected ? t('已连接') : t('未连接')}</strong></div></div>
     </aside>
 
@@ -444,7 +429,7 @@ export default function App() {
           {!state.hasProfile && <button type="button" className="inline-link" onClick={() => setPage('profiles')}>{t('先导入配置以启用连接')} <ArrowRight size={17} /></button>}
           <div className="connection-meta"><div><span>{t('本地代理')}</span><strong>127.0.0.1:{state.port}</strong></div><div><span>{t('内核状态')}</span><strong>{running ? t('运行中') : state.status === 'starting' ? t('启动中') : t('已停止')}</strong></div><div><span>{t('配置文件')}</span><strong>{state.hasProfile ? t('已导入') : t('未导入')}</strong></div></div>
         </section>
-        <ExitIPCard connected={connected && running} groups={groups} language={language} profileRevision={profileRevision} routingMode={state.routingMode} />
+        <ExitIPCard visible={visible} connected={connected && running} groups={groups} language={language} profileRevision={profileRevision} routingMode={state.routingMode} />
         <div className="module-grid">
           <section className="panel module-card"><div className="module-icon"><GlobeHemisphereWest size={24} /></div><div><h3>{t('代理节点')}</h3></div><button className="module-link" type="button" onClick={() => setPage('proxies')}>{t('查看代理')} <ArrowRight size={17} /></button></section>
           <section className="panel module-card"><div className="module-icon"><Stack size={24} /></div><div><h3>{t('配置与订阅')}</h3></div><button className="module-link" type="button" onClick={() => setPage('profiles')}>{t('查看配置')} <ArrowRight size={17} /></button></section>
@@ -515,7 +500,7 @@ export default function App() {
           <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>{t('导入订阅')}</h2></div></div><label className="field-label" htmlFor="subscription-url">{t('订阅链接')}</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={controlsBusy} autoComplete="off" spellCheck={false} placeholder={t('粘贴 HTTP / HTTPS 订阅地址')} onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={controlsBusy || !subscriptionURL} onClick={() => void importSubscription()}>{t('导入订阅')} <ArrowRight size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">{t('此地址使用 HTTP，访问令牌会在网络上传输明文。')}</small>}</section>
         </div>
       </>}
-      {page === 'diagnostics' && <Diagnostics connected={connected && running} language={language} profileRevision={profileRevision} />}
+      {page === 'diagnostics' && <Diagnostics visible={visible} connected={connected && running} language={language} profileRevision={profileRevision} />}
       {page === 'logs' && <>
         <div className="page-heading"><h1>{t('日志')}</h1></div>
         {logsError && <div className="alert" role="alert">{localizeError(language, logsError)}</div>}
