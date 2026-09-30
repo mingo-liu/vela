@@ -342,9 +342,8 @@ func manageRuleProviders(providers *yaml.Node) error {
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
 				return fmt.Errorf("规则提供器 %s URL 无效", name)
 			}
-			hash := sha256.Sum256([]byte(name + "\x00" + address.Value))
 			remove(provider, "path")
-			set(provider, "path", fmt.Sprintf("rules/%x.yaml", hash), "!!str")
+			set(provider, "path", providerCachePath("rules", name, address.Value), "!!str")
 		case "file":
 			path := lookup(provider, "path")
 			if path == nil || !filepath.IsLocal(path.Value) {
@@ -389,9 +388,8 @@ func manageProxyProviders(providers *yaml.Node) error {
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
 				return fmt.Errorf("节点提供器 %s URL 无效", name)
 			}
-			hash := sha256.Sum256([]byte(name + "\x00" + address.Value))
 			remove(provider, "path")
-			set(provider, "path", fmt.Sprintf("providers/%x.yaml", hash), "!!str")
+			set(provider, "path", providerCachePath("providers", name, address.Value), "!!str")
 		case "file":
 			path := lookup(provider, "path")
 			if path == nil || !filepath.IsLocal(path.Value) {
@@ -409,6 +407,11 @@ func manageProxyProviders(providers *yaml.Node) error {
 		}
 	}
 	return nil
+}
+
+func providerCachePath(directory, name, address string) string {
+	hash := sha256.Sum256([]byte(name + "\x00" + address))
+	return fmt.Sprintf("%s/%x.yaml", directory, hash)
 }
 
 func checkNodes(n *yaml.Node) error {

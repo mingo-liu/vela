@@ -5,13 +5,14 @@ import { localizeError, translate, type Language } from './i18n'
 type Props = {
   domain: string
   language: Language
+  active: boolean
   busy: boolean
   error: string
   onClose: () => void
   onConfirm: () => Promise<void>
 }
 
-export default function SubscriptionDeleteDialog({ domain, language, busy, error, onClose, onConfirm }: Props) {
+export default function SubscriptionDeleteDialog({ domain, language, active, busy, error, onClose, onConfirm }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const t = (text: string) => translate(language, text)
@@ -28,7 +29,7 @@ export default function SubscriptionDeleteDialog({ domain, language, busy, error
     }
   }, [])
 
-  return <dialog className="subscription-dialog" ref={dialog} aria-labelledby="subscription-delete-title" aria-describedby="subscription-delete-domain subscription-delete-description" onCancel={event => {
+  return <dialog className="subscription-dialog" ref={dialog} aria-labelledby="subscription-delete-title" aria-describedby={active ? 'subscription-delete-domain subscription-delete-description' : 'subscription-delete-domain'} onCancel={event => {
     event.preventDefault()
     if (!busy) onClose()
   }}>
@@ -40,7 +41,7 @@ export default function SubscriptionDeleteDialog({ domain, language, busy, error
       </div>
       <button className="subscription-dialog-close" type="button" aria-label={t('关闭弹窗')} disabled={busy} onClick={onClose}><X size={18} aria-hidden="true" /></button>
     </div>
-    <p className="subscription-dialog-description" id="subscription-delete-description">{t('确定删除此订阅？当前配置会保留。')}</p>
+    {active && <p className="subscription-dialog-description" id="subscription-delete-description">{t('删除此订阅及其节点和规则？当前连接将停止，删除后需要重新选择或导入配置。')}</p>}
     <form onSubmit={event => {
       event.preventDefault()
       if (!busy) void onConfirm()

@@ -397,6 +397,7 @@ export default function App() {
     } catch (error) {
       setSubscriptionDeleteError(message(error))
     } finally {
+      await stateReceiver.refresh(Runtime.State, () => true).catch(() => {})
       finishAction()
     }
   }
@@ -562,6 +563,6 @@ export default function App() {
       </>}
     </main>
     {page === 'profiles' && editedSubscription && <SubscriptionEditorDialog key={editedSubscription.id} url={editedSubscription.url} domain={subscriptionDomain(editedSubscription.url, language)} language={language} busy={controlsBusy} error={subscriptionEditError} onClose={() => setEditingSubscription(null)} onSave={url => saveSubscriptionURL(editedSubscription.id, url)} />}
-    {page === 'profiles' && subscriptionToDelete && <SubscriptionDeleteDialog key={subscriptionToDelete.id} domain={subscriptionDomain(subscriptionToDelete.url, language)} language={language} busy={controlsBusy} error={subscriptionDeleteError} onClose={() => setDeletingSubscription(null)} onConfirm={() => removeSubscription(subscriptionToDelete)} />}
+    {page === 'profiles' && subscriptionToDelete && <SubscriptionDeleteDialog key={subscriptionToDelete.id} domain={subscriptionDomain(subscriptionToDelete.url, language)} language={language} active={subscriptionToDelete.active} busy={controlsBusy} error={subscriptionDeleteError} onClose={() => setDeletingSubscription(null)} onConfirm={() => removeSubscription(subscriptionToDelete)} />}
   </div>
 }

@@ -306,8 +306,44 @@ func (r *Runner) RemoveSubscription(id string) error {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
+	items, err := r.subs.List()
+	active, found := false, false
+	for _, item := range items {
+		if item.ID == id {
+			active, found = item.Active, true
+			break
+		}
+	}
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if !found {
+		return profile.ErrNoSubscription
+	}
+	if active {
+		if _, err := r.Stop(); err != nil {
+			r.mu.Lock()
+			r.emit()
+			r.mu.Unlock()
+			return err
+		}
+	}
+	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.subs.Remove(id)
+	if err := r.subs.Remove(id); err != nil {
+		r.state.Error = err.Error()
+		r.emit()
+		return err
+	}
+	if active {
+		r.state.HasProfile = false
+		r.state.ConfigVersion++
+		r.apiPort, r.secret = 0, ""
+	}
+	r.state.Error = ""
+	r.emit()
+	return nil
 }
 
 func (r *Runner) ReplaceSubscriptionURL(id, address string) (State, error) {

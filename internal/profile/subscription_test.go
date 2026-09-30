@@ -127,9 +127,8 @@ func TestSubscriptionRefreshEditAndRemove(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].Active {
 		t.Fatalf("remove failed: %+v, %v", items, err)
 	}
-	profile, err = store.Load()
-	if err != nil || string(profile) != body["/replacement"] {
-		t.Fatalf("current profile was removed: %q, %v", profile, err)
+	if store.Exists() {
+		t.Fatal("removed active subscription retained its current profile")
 	}
 }
 

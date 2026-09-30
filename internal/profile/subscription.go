@@ -379,13 +379,14 @@ func (s *Subscriptions) Remove(id string) error {
 	if index < 0 {
 		return ErrNoSubscription
 	}
+	removed := catalog.Subscriptions[index]
 	catalog.Subscriptions = append(catalog.Subscriptions[:index], catalog.Subscriptions[index+1:]...)
-	if err := s.save(catalog); err != nil {
+	rollback, err := s.removeSubscriptionFiles(removed, catalog.Subscriptions)
+	if err != nil {
 		return err
 	}
-	if err := s.profiles.DeleteSubscription(id); err != nil {
-		s.restore(raw)
-		return err
+	if err := s.save(catalog); err != nil {
+		return errors.Join(err, rollback(), s.urls.Put(raw))
 	}
 	return nil
 }
