@@ -67,6 +67,37 @@ func NewSubscriptions(profiles *Store, urls URLStore) *Subscriptions {
 	return subscriptions
 }
 
+// DownloadedSubscription separates network I/O from changes to saved profiles.
+type DownloadedSubscription struct {
+	URL  string
+	Data []byte
+	Info Subscription
+}
+
+func (s *Subscriptions) Download(ctx context.Context, address string) (DownloadedSubscription, error) {
+	data, info, err := s.fetch(ctx, address)
+	if err != nil {
+		return DownloadedSubscription{}, err
+	}
+	if err := validateSubscription(data); err != nil {
+		return DownloadedSubscription{}, err
+	}
+	return DownloadedSubscription{URL: address, Data: data, Info: info}, nil
+}
+
+func (s *Subscriptions) URL(id string) (string, error) {
+	items, err := s.List()
+	if err != nil {
+		return "", err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item.URL, nil
+		}
+	}
+	return "", ErrNoSubscription
+}
+
 func subscriptionID(address string) string {
 	sum := sha256.Sum256([]byte(address))
 	return hex.EncodeToString(sum[:])
@@ -164,13 +195,15 @@ func (s *Subscriptions) preserveActive(catalog subscriptionCatalog) error {
 }
 
 func (s *Subscriptions) Import(ctx context.Context, address string) error {
-	data, info, err := s.fetch(ctx, address)
+	download, err := s.Download(ctx, address)
 	if err != nil {
 		return err
 	}
-	if err := validateSubscription(data); err != nil {
-		return err
-	}
+	return s.ImportDownloaded(download)
+}
+
+func (s *Subscriptions) ImportDownloaded(download DownloadedSubscription) error {
+	data, info, address := download.Data, download.Info, download.URL
 	catalog, _, err := s.catalog()
 	if err != nil {
 		return err
@@ -219,6 +252,18 @@ func (s *Subscriptions) ImportLocal(data string) error {
 }
 
 func (s *Subscriptions) Update(ctx context.Context, id string) error {
+	address, err := s.URL(id)
+	if err != nil {
+		return err
+	}
+	download, err := s.Download(ctx, address)
+	if err != nil {
+		return err
+	}
+	return s.UpdateDownloaded(id, download)
+}
+
+func (s *Subscriptions) UpdateDownloaded(id string, download DownloadedSubscription) error {
 	catalog, raw, err := s.catalog()
 	if err != nil {
 		return err
@@ -236,13 +281,10 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 	if index < 0 {
 		return ErrNoSubscription
 	}
-	data, info, err := s.fetch(ctx, catalog.Subscriptions[index].URL)
-	if err != nil {
-		return err
+	if download.URL != catalog.Subscriptions[index].URL {
+		return errors.New("订阅地址已改变，请重新下载")
 	}
-	if err := validateSubscription(data); err != nil {
-		return err
-	}
+	data, info := download.Data, download.Info
 	previousCache, err := s.profiles.LoadSubscription(id)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -274,6 +316,18 @@ func (s *Subscriptions) Update(ctx context.Context, id string) error {
 
 // RefreshInactive updates a saved subscription without selecting it.
 func (s *Subscriptions) RefreshInactive(ctx context.Context, id string) error {
+	address, err := s.URL(id)
+	if err != nil {
+		return err
+	}
+	download, err := s.Download(ctx, address)
+	if err != nil {
+		return err
+	}
+	return s.RefreshInactiveDownloaded(id, download)
+}
+
+func (s *Subscriptions) RefreshInactiveDownloaded(id string, download DownloadedSubscription) error {
 	catalog, _, err := s.catalog()
 	if err != nil {
 		return err
@@ -291,13 +345,10 @@ func (s *Subscriptions) RefreshInactive(ctx context.Context, id string) error {
 	if catalog.Subscriptions[index].Active {
 		return errors.New("当前订阅需要通过正常更新流程刷新")
 	}
-	data, info, err := s.fetch(ctx, catalog.Subscriptions[index].URL)
-	if err != nil {
-		return err
+	if download.URL != catalog.Subscriptions[index].URL {
+		return errors.New("订阅地址已改变，请重新下载")
 	}
-	if err := validateSubscription(data); err != nil {
-		return err
-	}
+	data, info := download.Data, download.Info
 	previous, err := s.profiles.LoadSubscription(id)
 	if err != nil {
 		return err
@@ -363,13 +414,15 @@ func (s *Subscriptions) RecordUpdateError(id string, cause error) error {
 // ReplaceURL downloads and validates the new address before changing a saved
 // subscription. The callback reloads an active profile into a running core.
 func (s *Subscriptions) ReplaceURL(ctx context.Context, id, address string, apply func() error) error {
-	data, info, err := s.fetch(ctx, address)
+	download, err := s.Download(ctx, address)
 	if err != nil {
 		return err
 	}
-	if err := validateSubscription(data); err != nil {
-		return err
-	}
+	return s.ReplaceURLDownloaded(id, download, apply)
+}
+
+func (s *Subscriptions) ReplaceURLDownloaded(id string, download DownloadedSubscription, apply func() error) error {
+	data, info, address := download.Data, download.Info, download.URL
 	catalog, raw, err := s.catalog()
 	if err != nil {
 		return err
@@ -430,6 +483,14 @@ func (s *Subscriptions) ReplaceURL(ctx context.Context, id, address string, appl
 // UpdateWithApply restores the saved subscription and active profile if applying
 // the new configuration to a running core fails.
 func (s *Subscriptions) UpdateWithApply(ctx context.Context, id string, apply func() error) error {
+	return s.updateWithApply(id, apply, func() error { return s.Update(ctx, id) })
+}
+
+func (s *Subscriptions) UpdateDownloadedWithApply(id string, download DownloadedSubscription, apply func() error) error {
+	return s.updateWithApply(id, apply, func() error { return s.UpdateDownloaded(id, download) })
+}
+
+func (s *Subscriptions) updateWithApply(id string, apply, update func() error) error {
 	_, previousCatalog, err := s.catalog()
 	if err != nil {
 		return err
@@ -443,7 +504,7 @@ func (s *Subscriptions) UpdateWithApply(ctx context.Context, id string, apply fu
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := s.Update(ctx, id); err != nil {
+	if err := update(); err != nil {
 		return err
 	}
 	if err := apply(); err != nil {

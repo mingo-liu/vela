@@ -5,6 +5,11 @@ const chinese: Record<string, string> = {
 }
 
 const english: Record<string, string> = {
+  '正在取消…': 'Cancelling…',
+  '正在应用配置…': 'Applying configuration…',
+  '正在测试节点延迟': 'Testing node latency',
+  '正在下载订阅…': 'Downloading subscription…',
+  '测速进度': 'Latency test progress',
   '首页': 'Home',
   '代理': 'Proxies',
   '代理设置': 'Proxy',
@@ -170,6 +175,11 @@ export function translate(language: Language, text: string): string {
 }
 
 const englishErrors: Record<string, string> = {
+  '操作已取消': 'Operation cancelled',
+  '操作超时，请重试': 'Operation timed out. Please try again',
+  '已有任务正在执行，请稍后重试': 'A task is already running. Please try again later',
+  '订阅地址已改变，请重新下载': 'The subscription URL changed. Please download it again',
+  '任务已结束': 'The task has ended',
   '本地代理端口必须在 1024–65535 之间': 'Local proxy port must be between 1024 and 65535',
   '配置文件不能超过 2 MiB': 'Profile file must not exceed 2 MiB',
   '无法读取已保存的节点选择': 'Could not read saved node selection',

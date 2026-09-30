@@ -3,7 +3,7 @@ import { ArrowClockwise, ArrowRight, CaretDown, CheckCircle, FileArrowUp, Folder
 import { Events } from '@wailsio/runtime'
 import velaIcon from '../../build/appicon.png'
 import * as Runtime from '../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
-import type { CoreInfo, Group, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
+import type { CoreInfo, Group, OperationProgress, State } from '../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import type { Subscription } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import type { Settings } from '../bindings/github.com/mingo-liu/vela/internal/profile/models'
 import { translate, localizeError, type Language } from './i18n'
@@ -105,6 +105,11 @@ export default function App() {
   const [sortModes, setSortModes] = useState<Record<string, SortMode>>({})
   const [nodeNames, setNodeNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  const pendingActions = useRef(0)
+  const startAction = () => { pendingActions.current++; setBusy(true) }
+  const finishAction = () => { pendingActions.current--; setBusy(pendingActions.current > 0) }
+  const [operation, setOperation] = useState<OperationProgress | null>(null)
+  const controlsBusy = busy || operation?.active === true
   const [notice, setNotice] = useState('')
   const [subscriptionURL, setSubscriptionURL] = useState('')
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
@@ -125,7 +130,26 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const language: Language = settings.language === 'en-US' ? 'en-US' : 'zh-CN'
   const t = (text: string) => translate(language, text)
-  const message = (error: unknown) => error instanceof Error ? error.message : String(error)
+  const message = (error: unknown) => {
+    const text = error instanceof Error ? error.message : String(error)
+    return text === '操作已取消' ? '' : text
+  }
+
+  useEffect(() => {
+    let active = true
+    let receivedEvent = false
+    const unsubscribe = Events.On('operation-progress', event => {
+      receivedEvent = true
+      if (active) setOperation(event.data as OperationProgress)
+    })
+    void Runtime.Operation().then(value => { if (active && !receivedEvent) setOperation(value) }).catch(() => {})
+    return () => { active = false; unsubscribe() }
+  }, [])
+
+  const cancelOperation = async () => {
+    if (!operation?.active || !operation.cancellable) return
+    try { await Runtime.CancelOperation(operation.id) } catch (error) { setNotice(message(error)) }
+  }
 
   useEffect(() => { document.documentElement.lang = language }, [language])
 
@@ -229,7 +253,7 @@ export default function App() {
   }
 
   const execute = async (action: () => Promise<State>) => {
-    setBusy(true)
+    startAction()
     setNotice('')
     try {
       setState(await action())
@@ -239,12 +263,12 @@ export default function App() {
       setState(await Runtime.State().catch(() => state))
       return false
     } finally {
-      setBusy(false)
+      finishAction()
     }
   }
 
   const updateSettings = async (action: () => Promise<Settings>) => {
-    setBusy(true)
+    startAction()
     setNotice('')
     try {
       setSettings(await action())
@@ -252,7 +276,7 @@ export default function App() {
       setNotice(message(error))
       try { setSettings(await Runtime.Settings()) } catch { /* retain the last known settings */ }
     } finally {
-      setBusy(false)
+      finishAction()
     }
   }
 
@@ -271,7 +295,7 @@ export default function App() {
   }
 
   const select = async (group: string, option: string) => {
-    setBusy(true)
+    startAction()
     setNotice('')
     try {
       await Runtime.Select(group, option)
@@ -279,7 +303,7 @@ export default function App() {
       setNotice(message(error))
     } finally {
       try { setGroups(await Runtime.Groups() ?? []) } catch (error) { setNotice(message(error)) }
-      setBusy(false)
+      finishAction()
     }
   }
 
@@ -311,14 +335,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (page !== 'proxies' || state.status !== 'running' || !state.hasProfile || busy || testingGroupRef.current || groupsRevision !== profileRevision) return
+    if (page !== 'proxies' || state.status !== 'running' || !state.hasProfile || controlsBusy || testingGroupRef.current || groupsRevision !== profileRevision) return
     const group = groups.find((candidate, index) => {
       if (!(expandedGroups[candidate.name] ?? index === 0) || !candidate.options?.length) return false
       const cached = delayCache.current[candidate.name]
       return !cached || cached.options !== JSON.stringify(candidate.options) || Date.now() - cached.testedAt >= delayCacheDuration
     })
     if (group) void testGroupDelay(group.name)
-  }, [page, state.status, state.hasProfile, busy, groups, groupsRevision, expandedGroups, completedDelayTests, profileRevision])
+  }, [page, state.status, state.hasProfile, controlsBusy, groups, groupsRevision, expandedGroups, completedDelayTests, profileRevision])
 
   const toggleGroupSort = (group: string) => {
     const next = (sortModes[group] ?? 'name') === 'name' ? 'delay' : 'name'
@@ -364,7 +388,7 @@ export default function App() {
 
   const removeSubscription = async (subscription: Subscription) => {
     if (!window.confirm(t('确定删除此订阅？当前配置会保留。'))) return
-    setBusy(true)
+    startAction()
     setNotice('')
     try {
       await Runtime.RemoveSubscription(subscription.id)
@@ -373,7 +397,7 @@ export default function App() {
     } catch (error) {
       setNotice(message(error))
     } finally {
-      setBusy(false)
+      finishAction()
     }
   }
 
@@ -393,6 +417,13 @@ export default function App() {
     </aside>
 
     <main className="content">
+      {operation?.active && <div className="operation-banner" role="status" aria-live="polite">
+        <div><strong>{t(operation.phase === 'cancelling' ? '正在取消…' : operation.phase === 'applying' ? '正在应用配置…' : operation.kind === 'delay' ? '正在测试节点延迟' : '正在下载订阅…')}</strong>
+          {operation.kind === 'delay' && <span>{operation.target} · {operation.completed} / {operation.total}</span>}
+          {operation.kind === 'delay' && operation.total > 0 && <progress value={operation.completed} max={operation.total} aria-label={t('测速进度')} />}
+        </div>
+        <button className="secondary-button" type="button" disabled={!operation.cancellable} onClick={() => void cancelOperation()}>{t(operation.phase === 'cancelling' ? '正在取消…' : '取消')}</button>
+      </div>}
       {page === 'home' && <>
         <div className="page-heading"><h1>{t('首页')}</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{localizeError(language, notice || state.error)}</div>}
@@ -400,10 +431,10 @@ export default function App() {
           <div className="connection-main"><div><h2 id="connection-title">{connected ? t('连接已就绪') : t('准备开始连接')}</h2></div></div>
           <h3 className="connection-setting-title">{t('网络设置')}</h3>
           <div className="connection-modes" aria-label={t('网络设置')}>
-            <button className={`mode-option${state.systemProxyEnabled ? ' on' : ''}`} type="button" role="switch" aria-label={t('系统代理')} aria-checked={state.systemProxyEnabled} disabled={busy || (!state.hasProfile && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}><span><strong>{t('系统代理')}</strong><small>{t('让遵循系统代理设置的应用连接')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
-            <button className={`mode-option${state.tunEnabled ? ' on' : ''}`} type="button" role="switch" aria-label={t('Tun 模式')} aria-checked={state.tunEnabled} disabled={busy || !state.tunSupported || (!state.hasProfile && !state.tunEnabled)} onClick={() => void execute(() => Runtime.SetTun(!state.tunEnabled))}><span><strong>{t('Tun 模式')}</strong><small>{state.tunSupported ? t('首次使用或 Tun 服务、内核更新后授权') : t('当前平台暂不支持')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+            <button className={`mode-option${state.systemProxyEnabled ? ' on' : ''}`} type="button" role="switch" aria-label={t('系统代理')} aria-checked={state.systemProxyEnabled} disabled={(controlsBusy && !(state.systemProxyEnabled && operation?.cancellable)) || (!state.hasProfile && !state.systemProxyEnabled)} onClick={() => void execute(() => Runtime.SetSystemProxy(!state.systemProxyEnabled))}><span><strong>{t('系统代理')}</strong><small>{t('让遵循系统代理设置的应用连接')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+            <button className={`mode-option${state.tunEnabled ? ' on' : ''}`} type="button" role="switch" aria-label={t('Tun 模式')} aria-checked={state.tunEnabled} disabled={(controlsBusy && !(state.tunEnabled && operation?.cancellable)) || !state.tunSupported || (!state.hasProfile && !state.tunEnabled)} onClick={() => void execute(() => Runtime.SetTun(!state.tunEnabled))}><span><strong>{t('Tun 模式')}</strong><small>{state.tunSupported ? t('首次使用或 Tun 服务、内核更新后授权') : t('当前平台暂不支持')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
           </div>
-          <fieldset className="routing-settings" disabled={busy}>
+          <fieldset className="routing-settings" disabled={controlsBusy}>
             <legend className="connection-setting-title">{t('代理模式')}</legend>
             <div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}>
               <input type="radio" name="routing-mode" value={option.value} checked={state.routingMode === option.value} onChange={() => void execute(() => Runtime.SetRoutingMode(option.value))} />
@@ -440,12 +471,12 @@ export default function App() {
                   <span className="proxy-group-title"><strong>{group.name}</strong><small><span className="proxy-kind">{t('手动选择')}</span><span>{group.current || t('未选择')}</span></small></span>
                 </button>
                 <div className="proxy-group-actions">
-                  <button className={`proxy-group-action signal${testingGroup === group.name ? ' testing' : ''}`} type="button" aria-label={`${t('测试节点延迟')}: ${group.name}`} title={t('测延迟')} disabled={busy || testingGroup !== null} onClick={() => void testGroupDelay(group.name)}><WifiMedium size={30} weight="bold" aria-hidden="true" /></button>
+                  <button className={`proxy-group-action signal${testingGroup === group.name ? ' testing' : ''}`} type="button" aria-label={`${t('测试节点延迟')}: ${group.name}`} title={t('测延迟')} disabled={controlsBusy || testingGroup !== null} onClick={() => void testGroupDelay(group.name)}><WifiMedium size={30} weight="bold" aria-hidden="true" /></button>
                   <button className="proxy-group-action sort" type="button" aria-label={`${group.name}: ${t(sortMode === 'name' ? '当前按名称排序，点击按延迟排序' : '当前按延迟排序，点击按名称排序')}`} title={sortMode === 'name' ? t('当前按名称排序，点击按延迟排序') : t('当前按延迟排序，点击按名称排序')} onClick={() => toggleGroupSort(group.name)}><SortModeIcon mode={sortMode} /></button>
                 </div>
                 <button className="proxy-group-expand" type="button" aria-label={`${expanded ? t('收起') : t('展开')} ${group.name}`} aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}><span>{group.options?.length ?? 0} {t('个节点')}</span><CaretDown size={20} className={expanded ? 'expanded' : ''} /></button>
               </div>
-              {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{options.map(option => <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={busy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span className="proxy-node-meta"><span className="proxy-node-kind">{groups.some(candidate => candidate.name === option) ? t('策略组') : nodeNames.includes(option) ? t('代理节点') : t('内置节点')}</span><span className={`proxy-node-delay${testingGroup === group.name ? ' testing' : delays[option] ? ' measured' : ''}`}>{testingGroup === group.name ? <>{t('测速中')}<span className="delay-dots" aria-hidden="true"><i /><i /><i /></span></> : delays[option] ? `${delays[option]} ms` : measuredGroups[group.name] ? t('失败') : t('未测速')}</span></span></button>)}</div>}
+              {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{options.map(option => <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={controlsBusy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span className="proxy-node-meta"><span className="proxy-node-kind">{groups.some(candidate => candidate.name === option) ? t('策略组') : nodeNames.includes(option) ? t('代理节点') : t('内置节点')}</span><span className={`proxy-node-delay${testingGroup === group.name ? ' testing' : delays[option] ? ' measured' : ''}`}>{testingGroup === group.name ? <>{t('测速中')}<span className="delay-dots" aria-hidden="true"><i /><i /><i /></span></> : delays[option] ? `${delays[option]} ms` : measuredGroups[group.name] ? t('失败') : t('未测速')}</span></span></button>)}</div>}
             </section>
           })}</div>
           {groups.length === 0 && nodeNames.length > 0 && <div className="profile-nodes"><h3>{t('当前配置节点')} <small>{nodeNames.length} {t('个')}</small></h3><div className="proxy-options" aria-label={t('当前配置节点')}>{nodeNames.map(name => <span key={name}>{name}</span>)}</div></div>}
@@ -465,23 +496,23 @@ export default function App() {
                 const domain = subscriptionDomain(subscription.url, language)
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
-                    <button className="subscription-refresh" type="button" disabled={busy} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
-                    <button className="subscription-refresh" type="button" disabled={busy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setEditingSubscription(subscription.id); setSubscriptionDraft(subscription.url) }}><PencilSimple size={17} /></button>
-                    <button className="subscription-refresh" type="button" disabled={busy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => void removeSubscription(subscription)}><Trash size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setEditingSubscription(subscription.id); setSubscriptionDraft(subscription.url) }}><PencilSimple size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => void removeSubscription(subscription)}><Trash size={17} /></button>
                   </div>
-                  <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={busy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
+                  <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={controlsBusy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
                     <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
                     <span className="subscription-usage"><span>{t('剩余')} <strong>{formatBytes(remaining, language)}</strong></span><span>{t('总量')} <strong>{formatBytes(subscription.total, language)}</strong></span></span>
                     <span className="subscription-dates"><span>{t('到期')} {formatDate(subscription.expiresAt, language)}</span><span>{t('更新')} {formatDate(subscription.updatedAt, language)}</span></span>
                   </button>
                   {subscription.lastUpdateError && <small className="subscription-error" title={localizeError(language, subscription.lastUpdateError)}>{t('自动更新失败')}：{localizeError(language, subscription.lastUpdateError)}</small>}
-                  {editingSubscription === subscription.id && <div className="subscription-editor"><label className="field-label" htmlFor={`subscription-edit-${subscription.id}`}>{t('订阅链接')}</label><input className="text-field" id={`subscription-edit-${subscription.id}`} type="url" value={subscriptionDraft} disabled={busy} onChange={event => setSubscriptionDraft(event.target.value)} /><div className="subscription-editor-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => setEditingSubscription(null)}>{t('取消')}</button><button className="primary-button" type="button" disabled={busy || !subscriptionDraft.trim()} onClick={() => void saveSubscriptionURL(subscription.id)}>{t('保存并更新')}</button></div></div>}
+                  {editingSubscription === subscription.id && <div className="subscription-editor"><label className="field-label" htmlFor={`subscription-edit-${subscription.id}`}>{t('订阅链接')}</label><input className="text-field" id={`subscription-edit-${subscription.id}`} type="url" value={subscriptionDraft} disabled={controlsBusy} onChange={event => setSubscriptionDraft(event.target.value)} /><div className="subscription-editor-actions"><button className="secondary-button" type="button" disabled={controlsBusy} onClick={() => setEditingSubscription(null)}>{t('取消')}</button><button className="primary-button" type="button" disabled={controlsBusy || !subscriptionDraft.trim()} onClick={() => void saveSubscriptionURL(subscription.id)}>{t('保存并更新')}</button></div></div>}
                 </article>
               })}
             </div>
           </section>
-          <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><FileArrowUp size={24} /></div><div><h2>{t('本地配置')}</h2></div></div><button className="primary-button import-button file-button" type="button" disabled={busy || running} onClick={() => fileInput.current?.click()}>{t('选择 YAML 文件')} <FileArrowUp size={18} /></button><input ref={fileInput} className="file-input" type="file" accept=".yaml,.yml,text/yaml" tabIndex={-1} onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} /></section>
-          <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>{t('导入订阅')}</h2></div></div><label className="field-label" htmlFor="subscription-url">{t('订阅链接')}</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={busy} autoComplete="off" spellCheck={false} placeholder={t('粘贴 HTTP / HTTPS 订阅地址')} onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={busy || !subscriptionURL} onClick={() => void importSubscription()}>{t('导入订阅')} <ArrowRight size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">{t('此地址使用 HTTP，访问令牌会在网络上传输明文。')}</small>}</section>
+          <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><FileArrowUp size={24} /></div><div><h2>{t('本地配置')}</h2></div></div><button className="primary-button import-button file-button" type="button" disabled={controlsBusy || running} onClick={() => fileInput.current?.click()}>{t('选择 YAML 文件')} <FileArrowUp size={18} /></button><input ref={fileInput} className="file-input" type="file" accept=".yaml,.yml,text/yaml" tabIndex={-1} onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} /></section>
+          <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>{t('导入订阅')}</h2></div></div><label className="field-label" htmlFor="subscription-url">{t('订阅链接')}</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={controlsBusy} autoComplete="off" spellCheck={false} placeholder={t('粘贴 HTTP / HTTPS 订阅地址')} onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={controlsBusy || !subscriptionURL} onClick={() => void importSubscription()}>{t('导入订阅')} <ArrowRight size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">{t('此地址使用 HTTP，访问令牌会在网络上传输明文。')}</small>}</section>
         </div>
       </>}
       {page === 'diagnostics' && <Diagnostics connected={connected && running} language={language} profileRevision={profileRevision} />}
@@ -501,23 +532,23 @@ export default function App() {
         <div className="settings-stack">
           <section className="panel settings-card" aria-labelledby="language-settings-title">
             <h2 id="language-settings-title">{t('语言')}</h2>
-            <label className="setting-row" htmlFor="interface-language"><span><strong>{t('界面语言')}</strong><small>{t('切换后立即生效')}</small></span><select id="interface-language" value={language} disabled={busy} onChange={event => void updateSettings(() => Runtime.SetLanguage(event.target.value))}><option value="zh-CN">简体中文</option><option value="en-US">English</option></select></label>
+            <label className="setting-row" htmlFor="interface-language"><span><strong>{t('界面语言')}</strong><small>{t('切换后立即生效')}</small></span><select id="interface-language" value={language} disabled={controlsBusy} onChange={event => void updateSettings(() => Runtime.SetLanguage(event.target.value))}><option value="zh-CN">简体中文</option><option value="en-US">English</option></select></label>
           </section>
           <section className="panel settings-card" aria-labelledby="startup-settings-title">
             <h2 id="startup-settings-title">{t('启动')}</h2>
-            <button className={`setting-row setting-switch${settings.launchAtLogin ? ' on' : ''}`} type="button" role="switch" aria-checked={settings.launchAtLogin} disabled={busy} onClick={() => void updateSettings(() => Runtime.SetLaunchAtLogin(!settings.launchAtLogin))}><span><strong>{t('登录时启动')}</strong><small>{t('登录 macOS 后打开 Vela')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
-            <button className={`setting-row setting-switch${settings.autoConnect ? ' on' : ''}`} type="button" role="switch" aria-checked={settings.autoConnect} disabled={busy} onClick={() => void updateSettings(() => Runtime.SetAutoConnect(!settings.autoConnect))}><span><strong>{t('启动后自动连接')}</strong><small>{t('有可用配置时，在 Vela 启动后连接')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
-            <label className="setting-row" htmlFor="auto-connect-mode"><span><strong>{t('自动连接方式')}</strong><small>{t('下次启动时使用')}</small></span><select id="auto-connect-mode" value={settings.autoConnectMode} disabled={busy} onChange={event => void updateSettings(() => Runtime.SetAutoConnectMode(event.target.value))}><option value="system">{t('系统代理')}</option><option value="tun" disabled={!state.tunSupported}>{t('Tun 模式')}</option></select></label>
-            <label className="setting-row" htmlFor="subscription-update-hours"><span><strong>{t('订阅自动更新')}</strong><small>{t('自动刷新已保存的订阅')}</small></span><select id="subscription-update-hours" value={settings.subscriptionUpdateHours} disabled={busy} onChange={event => void updateSettings(() => Runtime.SetSubscriptionUpdateHours(Number(event.target.value)))}><option value={0}>{t('关闭')}</option><option value={6}>{t('每 6 小时')}</option><option value={12}>{t('每 12 小时')}</option><option value={24}>{t('每 24 小时')}</option></select></label>
+            <button className={`setting-row setting-switch${settings.launchAtLogin ? ' on' : ''}`} type="button" role="switch" aria-checked={settings.launchAtLogin} disabled={controlsBusy} onClick={() => void updateSettings(() => Runtime.SetLaunchAtLogin(!settings.launchAtLogin))}><span><strong>{t('登录时启动')}</strong><small>{t('登录 macOS 后打开 Vela')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+            <button className={`setting-row setting-switch${settings.autoConnect ? ' on' : ''}`} type="button" role="switch" aria-checked={settings.autoConnect} disabled={controlsBusy} onClick={() => void updateSettings(() => Runtime.SetAutoConnect(!settings.autoConnect))}><span><strong>{t('启动后自动连接')}</strong><small>{t('有可用配置时，在 Vela 启动后连接')}</small></span><span className="switch-track"><span className="switch-knob" /></span></button>
+            <label className="setting-row" htmlFor="auto-connect-mode"><span><strong>{t('自动连接方式')}</strong><small>{t('下次启动时使用')}</small></span><select id="auto-connect-mode" value={settings.autoConnectMode} disabled={controlsBusy} onChange={event => void updateSettings(() => Runtime.SetAutoConnectMode(event.target.value))}><option value="system">{t('系统代理')}</option><option value="tun" disabled={!state.tunSupported}>{t('Tun 模式')}</option></select></label>
+            <label className="setting-row" htmlFor="subscription-update-hours"><span><strong>{t('订阅自动更新')}</strong><small>{t('自动刷新已保存的订阅')}</small></span><select id="subscription-update-hours" value={settings.subscriptionUpdateHours} disabled={controlsBusy} onChange={event => void updateSettings(() => Runtime.SetSubscriptionUpdateHours(Number(event.target.value)))}><option value={0}>{t('关闭')}</option><option value={6}>{t('每 6 小时')}</option><option value={12}>{t('每 12 小时')}</option><option value={24}>{t('每 24 小时')}</option></select></label>
           </section>
           <section className="panel settings-card" aria-labelledby="proxy-settings-title">
             <h2 id="proxy-settings-title">{t('代理设置')}</h2>
-            <fieldset className="settings-routing" disabled={busy}><legend>{t('代理模式')}</legend><div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}><input type="radio" name="settings-routing-mode" value={option.value} checked={state.routingMode === option.value} onChange={() => void execute(() => Runtime.SetRoutingMode(option.value))} /><span><strong>{t(option.label)}</strong><small>{t(option.description)}</small></span></label>)}</div></fieldset>
-            <div className="setting-row port-setting"><label htmlFor="mixed-port"><strong>{t('本地代理端口')}</strong>{connected && <small>{t('保存后将按当前网络设置重新连接')}</small>}</label><div className="port-editor"><div className="port-field"><span className="port-address">127.0.0.1:</span><input id="mixed-port" type="number" min="1024" max="65535" step="1" inputMode="numeric" value={portDraft} disabled={busy} onChange={event => setPortDraft(event.target.value)} /></div><button className="secondary-button" type="button" disabled={busy || portDraft === String(state.port)} onClick={() => void saveMixedPort()}>{t('保存')}</button></div></div>
+            <fieldset className="settings-routing" disabled={controlsBusy}><legend>{t('代理模式')}</legend><div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}><input type="radio" name="settings-routing-mode" value={option.value} checked={state.routingMode === option.value} onChange={() => void execute(() => Runtime.SetRoutingMode(option.value))} /><span><strong>{t(option.label)}</strong><small>{t(option.description)}</small></span></label>)}</div></fieldset>
+            <div className="setting-row port-setting"><label htmlFor="mixed-port"><strong>{t('本地代理端口')}</strong>{connected && <small>{t('保存后将按当前网络设置重新连接')}</small>}</label><div className="port-editor"><div className="port-field"><span className="port-address">127.0.0.1:</span><input id="mixed-port" type="number" min="1024" max="65535" step="1" inputMode="numeric" value={portDraft} disabled={controlsBusy} onChange={event => setPortDraft(event.target.value)} /></div><button className="secondary-button" type="button" disabled={controlsBusy || portDraft === String(state.port)} onClick={() => void saveMixedPort()}>{t('保存')}</button></div></div>
           </section>
           <section className="panel settings-card" aria-labelledby="core-settings-title">
             <h2 id="core-settings-title">{t('内核')}</h2>
-            <label className="setting-row" htmlFor="log-level"><span><strong>{t('日志级别')}</strong><small>{t('重新载入配置或下次连接时生效')}</small></span><select id="log-level" value={settings.logLevel} disabled={busy} onChange={event => void updateSettings(() => Runtime.SetLogLevel(event.target.value))}><option value="profile">{t('跟随配置')}</option><option value="silent">{t('静默')}</option><option value="error">{t('错误')}</option><option value="warning">{t('警告')}</option><option value="info">{t('信息日志')}</option><option value="debug">{t('调试')}</option></select></label>
+            <label className="setting-row" htmlFor="log-level"><span><strong>{t('日志级别')}</strong><small>{t('重新载入配置或下次连接时生效')}</small></span><select id="log-level" value={settings.logLevel} disabled={controlsBusy} onChange={event => void updateSettings(() => Runtime.SetLogLevel(event.target.value))}><option value="profile">{t('跟随配置')}</option><option value="silent">{t('静默')}</option><option value="error">{t('错误')}</option><option value="warning">{t('警告')}</option><option value="info">{t('信息日志')}</option><option value="debug">{t('调试')}</option></select></label>
           </section>
           <section className="panel settings-card" aria-labelledby="info-settings-title">
             <h2 id="info-settings-title">{t('信息')}</h2>

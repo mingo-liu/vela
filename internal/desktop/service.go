@@ -41,6 +41,10 @@ func (s *RuntimeService) SetLanguage(language string) (profile.Settings, error) 
 
 func (s *RuntimeService) State() mihomo.State { return s.runner.Snapshot() }
 
+func (s *RuntimeService) Operation() mihomo.OperationProgress { return s.runner.Operation() }
+
+func (s *RuntimeService) CancelOperation(id uint64) bool { return s.runner.CancelOperation(id) }
+
 func (s *RuntimeService) Logs() string { return s.runner.Logs() }
 
 func (s *RuntimeService) TrafficTotals() (mihomo.TrafficTotals, error) {

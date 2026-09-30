@@ -293,3 +293,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .diagnostics-rule > span:last-child { grid-column: 3; }
   .diagnostics-actions .text-field { width: 150px; }
 }
+
+.operation-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; padding: 15px 18px; background: #f5f6f8; border: 1px solid #e3e5e9; border-radius: 12px; }
+.operation-banner > div { display: grid; gap: 8px; min-width: 0; flex: 1; font-size: 13px; }
+.operation-banner span { color: #62666d; overflow-wrap: anywhere; }
+.operation-banner progress { width: 100%; height: 6px; accent-color: #f31645; }

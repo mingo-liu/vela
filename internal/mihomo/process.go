@@ -62,6 +62,10 @@ const delayTestURL = "https://www.gstatic.com/generate_204"
 
 type Runner struct {
 	operationMu     sync.Mutex
+	taskMu          sync.Mutex
+	taskProgress    OperationProgress
+	taskCancel      context.CancelFunc
+	onProgress      func(OperationProgress)
 	mu              sync.Mutex
 	store           *profile.Store
 	subs            *profile.Subscriptions
@@ -178,31 +182,64 @@ func (r *Runner) Import(data string) (State, error) {
 func (r *Runner) ImportSubscription(address string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
+	ctx, id, err := r.beginOperation("subscription", "", 1)
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	defer r.finishOperation(id)
+	download, err := r.subs.Download(ctx, address)
+	if ctx.Err() != nil {
+		err = operationError(ctx.Err())
+	}
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	if err := r.beginApply(ctx, id); err != nil {
+		return r.Snapshot(), err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.subs.Import(context.Background(), address); err != nil {
+	if err := r.subs.ImportDownloaded(download); err != nil {
 		return r.state, err
 	}
 	return r.state, nil
 }
 
 func (r *Runner) Subscriptions() ([]profile.Subscription, error) {
-	r.operationMu.Lock()
-	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.subs.List()
 }
 
 func (r *Runner) UpdateSubscription(id string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
+	address, err := r.subs.URL(id)
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	ctx, taskID, err := r.beginOperation("subscription", id, 1)
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	defer r.finishOperation(taskID)
+	download, err := r.subs.Download(ctx, address)
+	if ctx.Err() != nil {
+		err = operationError(ctx.Err())
+	}
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	if err := r.beginApply(ctx, taskID); err != nil {
+		return r.Snapshot(), err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil && r.state.Status != "running" {
 		return r.state, errors.New("内核正在切换状态，请稍后重试")
 	}
-	var err error
 	if r.cmd == nil {
-		err = r.subs.Update(context.Background(), id)
+		err = r.subs.UpdateDownloaded(id, download)
 	} else {
 		var previousProfile, previousConfig []byte
 		var previousSubscriptions []profile.Subscription
@@ -214,7 +251,7 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 			previousSubscriptions, err = r.subs.List()
 		}
 		if err == nil {
-			err = r.subs.UpdateWithApply(context.Background(), id, func() error {
+			err = r.subs.UpdateDownloadedWithApply(id, download, func() error {
 				return r.reloadSelectedProfile(previousProfile, previousConfig, previousSubscriptions)
 			})
 		}
@@ -231,18 +268,56 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 func (r *Runner) refreshInactiveSubscription(id string) error {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
-	return r.subs.RefreshInactive(context.Background(), id)
+	address, err := r.subs.URL(id)
+	if err != nil {
+		return err
+	}
+	ctx, taskID, err := r.beginOperation("subscription", id, 1)
+	if err != nil {
+		return err
+	}
+	defer r.finishOperation(taskID)
+	download, err := r.subs.Download(ctx, address)
+	if ctx.Err() != nil {
+		err = operationError(ctx.Err())
+	}
+	if err != nil {
+		return err
+	}
+	if err := r.beginApply(ctx, taskID); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.subs.RefreshInactiveDownloaded(id, download)
 }
 
 func (r *Runner) RemoveSubscription(id string) error {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.subs.Remove(id)
 }
 
 func (r *Runner) ReplaceSubscriptionURL(id, address string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
+	ctx, taskID, err := r.beginOperation("subscription", id, 1)
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	defer r.finishOperation(taskID)
+	download, err := r.subs.Download(ctx, address)
+	if ctx.Err() != nil {
+		err = operationError(ctx.Err())
+	}
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	if err := r.beginApply(ctx, taskID); err != nil {
+		return r.Snapshot(), err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil && r.state.Status != "running" {
@@ -273,7 +348,7 @@ func (r *Runner) ReplaceSubscriptionURL(id, address string) (State, error) {
 			return r.reloadSelectedProfile(previousProfile, previousConfig, items)
 		}
 	}
-	if err := r.subs.ReplaceURL(context.Background(), id, address, apply); err != nil {
+	if err := r.subs.ReplaceURLDownloaded(id, download, apply); err != nil {
 		return r.state, err
 	}
 	r.state.Error = ""
@@ -307,7 +382,11 @@ func (r *Runner) UpdateDueSubscriptions(now time.Time, interval time.Duration) {
 		}
 		if updateErr != nil {
 			r.operationMu.Lock()
-			_ = r.subs.RecordUpdateError(item.ID, updateErr)
+			r.mu.Lock()
+			if !errors.Is(updateErr, ErrOperationCancelled) {
+				_ = r.subs.RecordUpdateError(item.ID, updateErr)
+			}
+			r.mu.Unlock()
 			r.operationMu.Unlock()
 		}
 	}
@@ -316,6 +395,31 @@ func (r *Runner) UpdateDueSubscriptions(now time.Time, interval time.Duration) {
 func (r *Runner) SelectSubscription(id string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
+	var download *profile.DownloadedSubscription
+	if _, err := r.store.LoadSubscription(id); errors.Is(err, os.ErrNotExist) {
+		address, err := r.subs.URL(id)
+		if err != nil {
+			return r.Snapshot(), err
+		}
+		ctx, taskID, err := r.beginOperation("subscription", id, 1)
+		if err != nil {
+			return r.Snapshot(), err
+		}
+		defer r.finishOperation(taskID)
+		fetched, err := r.subs.Download(ctx, address)
+		if ctx.Err() != nil {
+			err = operationError(ctx.Err())
+		}
+		if err != nil {
+			return r.Snapshot(), err
+		}
+		if err := r.beginApply(ctx, taskID); err != nil {
+			return r.Snapshot(), err
+		}
+		download = &fetched
+	} else if err != nil {
+		return r.Snapshot(), err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil && r.state.Status != "running" {
@@ -340,8 +444,14 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 			return r.state, err
 		}
 	}
-	if err := r.subs.Select(context.Background(), id); err != nil {
-		return r.state, err
+	var selectErr error
+	if download != nil {
+		selectErr = r.subs.UpdateDownloaded(id, *download)
+	} else {
+		selectErr = r.subs.Select(context.Background(), id)
+	}
+	if selectErr != nil {
+		return r.state, selectErr
 	}
 	if running {
 		if err := r.reloadSelectedProfile(previousProfile, previousConfig, previousSubscriptions); err != nil {
@@ -424,6 +534,10 @@ func (r *Runner) Start() (State, error) {
 }
 
 func (r *Runner) start(tun bool) (State, error) {
+	return r.startWithContext(context.Background(), tun)
+}
+
+func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil {
@@ -532,7 +646,7 @@ func (r *Runner) start(tun bool) (State, error) {
 		if tun {
 			readyTimeout = 2 * time.Minute
 		}
-		if err := r.waitReadyUntil(done, readyTimeout); err != nil {
+		if err := r.waitReadyContext(ctx, done, readyTimeout); err != nil {
 			if tun {
 				_ = os.WriteFile(r.tunStopPath, nil, 0600)
 			}
@@ -840,6 +954,7 @@ func (r *Runner) patchRoutingMode(mode string) error {
 }
 
 func (r *Runner) setMode(mode string) (State, error) {
+	r.CancelOperation(0)
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
@@ -1002,28 +1117,53 @@ func (r *Runner) NodeNames() ([]string, error) {
 
 func (r *Runner) TestGroupDelay(group string) (delays map[string]int, err error) {
 	r.operationMu.Lock()
-	defer r.operationMu.Unlock()
+	locked := true
+	var temporary *exec.Cmd
+	var taskID uint64
+	defer func() {
+		if temporary != nil {
+			if !locked {
+				r.operationMu.Lock()
+				locked = true
+			}
+			r.mu.Lock()
+			stop := r.cmd == temporary && !r.state.SystemProxyEnabled && !r.state.TunEnabled
+			r.mu.Unlock()
+			if stop {
+				_, stopErr := r.Stop()
+				err = errors.Join(err, stopErr)
+			}
+		}
+		if locked {
+			r.operationMu.Unlock()
+		}
+		if taskID != 0 {
+			r.finishOperation(taskID)
+		}
+	}()
+	ctx, id, err := r.beginOperation("delay", group, 0)
+	if err != nil {
+		return nil, err
+	}
+	taskID = id
 	r.mu.Lock()
 	running := r.state.Status == "running"
 	r.mu.Unlock()
 	if !running {
-		state, err := r.Start()
-		if err != nil {
+		if _, err := r.startWithContext(ctx, false); err != nil {
+			if ctx.Err() != nil {
+				return nil, operationError(ctx.Err())
+			}
 			return nil, err
 		}
-		if state.Status != "running" {
-			return nil, errors.New("内核尚未就绪，无法测延迟")
-		}
-		defer func() {
-			_, stopErr := r.Stop()
-			err = errors.Join(err, stopErr)
-		}()
+		r.mu.Lock()
+		temporary = r.cmd
+		r.mu.Unlock()
 	}
 	r.mu.Lock()
 	apiPort, secret, transport := r.apiPort, r.secret, r.client.Transport
+	groups, err := r.controllerGroups()
 	r.mu.Unlock()
-
-	groups, err := r.Groups()
 	if err != nil {
 		return nil, err
 	}
@@ -1031,42 +1171,64 @@ func (r *Runner) TestGroupDelay(group string) (delays map[string]int, err error)
 	found := false
 	for _, candidate := range groups {
 		if candidate.Name == group {
-			options = candidate.Options
-			found = true
+			options, found = candidate.Options, true
 			break
 		}
 	}
 	if !found {
 		return nil, errors.New("策略组不存在")
 	}
-
+	r.taskMu.Lock()
+	r.taskProgress.Total = len(options)
+	r.emitProgress()
+	r.taskMu.Unlock()
+	// Connection changes may cancel the probes and take over a temporary core.
+	// No state or operation lock is held while waiting on network requests.
+	r.operationMu.Unlock()
+	locked = false
 	client := &http.Client{Timeout: 6 * time.Second, Transport: transport}
 	delays = make(map[string]int)
-	var mu sync.Mutex
+	var resultsMu sync.Mutex
 	var workers sync.WaitGroup
-	limit := make(chan struct{}, 8)
-	for _, option := range options {
+	jobs := make(chan string)
+	for i := 0; i < 8; i++ {
 		workers.Add(1)
-		limit <- struct{}{}
 		go func() {
 			defer workers.Done()
-			defer func() { <-limit }()
-			delay, err := testProxyDelay(client, apiPort, secret, option)
-			if err == nil && delay > 0 {
-				mu.Lock()
-				delays[option] = delay
-				mu.Unlock()
+			for option := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				delay, probeErr := testProxyDelay(ctx, client, apiPort, secret, option)
+				if probeErr == nil && delay > 0 {
+					resultsMu.Lock()
+					delays[option] = delay
+					resultsMu.Unlock()
+				}
+				r.advanceOperation(taskID, len(options))
 			}
 		}()
 	}
+queue:
+	for _, option := range options {
+		select {
+		case <-ctx.Done():
+			break queue
+		case jobs <- option:
+		}
+	}
+	close(jobs)
 	workers.Wait()
+	if ctx.Err() != nil {
+		return delays, operationError(ctx.Err())
+	}
 	return delays, nil
 }
 
-func testProxyDelay(client *http.Client, apiPort int, secret, option string) (int, error) {
+func testProxyDelay(ctx context.Context, client *http.Client, apiPort int, secret, option string) (int, error) {
 	query := url.Values{"url": {delayTestURL}, "timeout": {"5000"}}
 	address := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?%s", apiPort, url.PathEscape(option), query.Encode())
-	request, err := http.NewRequest(http.MethodGet, address, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -1164,6 +1326,7 @@ func (r *Runner) writeControllerSelection(group, option string) error {
 }
 
 func (r *Runner) Close() {
+	r.CancelOperation(0)
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
 	_, _ = r.Stop()
@@ -1187,6 +1350,10 @@ func (r *Runner) waitReady(done <-chan struct{}) error {
 }
 
 func (r *Runner) waitReadyUntil(done <-chan struct{}, timeout time.Duration) error {
+	return r.waitReadyContext(context.Background(), done, timeout)
+}
+
+func (r *Runner) waitReadyContext(ctx context.Context, done <-chan struct{}, timeout time.Duration) error {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	tick := time.NewTicker(150 * time.Millisecond)
@@ -1202,6 +1369,8 @@ func (r *Runner) waitReadyUntil(done <-chan struct{}, timeout time.Duration) err
 		select {
 		case <-done:
 			return errors.New("进程提前退出")
+		case <-ctx.Done():
+			return operationError(ctx.Err())
 		case <-deadline.C:
 			return errors.New("等待控制接口与代理端口超时")
 		case <-tick.C:

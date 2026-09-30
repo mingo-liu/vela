@@ -47,6 +47,11 @@ func Run(assets fs.FS) error {
 			wails.Event.Emit("runtime-state", state)
 		}
 	})
+	runner.SetOperationObserver(func(progress mihomo.OperationProgress) {
+		if wails != nil {
+			wails.Event.Emit("operation-progress", progress)
+		}
+	})
 	if runtime.GOOS == "darwin" {
 		runner.SetTunLauncher(macos.NewTunLauncher(binary, dataDir, func() string {
 			settings, err := store.Settings()
