@@ -159,11 +159,6 @@ export default function App() {
     catch (error) { if (isCurrent()) setNotice(message(error)) }
   }, visible ? 30000 : 120000)
 
-  const cancelOperation = async () => {
-    if (!operation?.active || !operation.cancellable) return
-    try { await Runtime.CancelOperation(operation.id) } catch (error) { setNotice(message(error)) }
-  }
-
   useEffect(() => { document.documentElement.lang = language }, [language])
   useEffect(() => {
     if (page !== 'profiles') {
@@ -420,13 +415,6 @@ export default function App() {
     </aside>
 
     <main className="content">
-      {operation?.active && operation.kind === 'delay' && <div className="operation-banner" role="status" aria-live="polite">
-        <div><strong>{t(operation.phase === 'cancelling' ? '正在取消…' : '正在测试节点延迟')}</strong>
-          {operation.kind === 'delay' && <span>{operation.target} · {operation.completed} / {operation.total}</span>}
-          {operation.kind === 'delay' && operation.total > 0 && <progress value={operation.completed} max={operation.total} aria-label={t('测速进度')} />}
-        </div>
-        <button className="secondary-button" type="button" disabled={!operation.cancellable} onClick={() => void cancelOperation()}>{t(operation.phase === 'cancelling' ? '正在取消…' : '取消')}</button>
-      </div>}
       {page === 'home' && <>
         <div className="page-heading"><h1>{t('首页')}</h1></div>
         {(notice || state.error) && <div className="alert" role="alert">{localizeError(language, notice || state.error)}</div>}
