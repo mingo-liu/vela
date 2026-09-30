@@ -882,3 +882,51 @@ func TestProviderSelectionPersistsAndRollsBack(t *testing.T) {
 		t.Fatalf("failed persistence did not restore the core: %s, %v", current, err)
 	}
 }
+
+func TestSubscriptionSelectionsRestoreAfterReloadWithRealCore(t *testing.T) {
+	binary := os.Getenv("VELA_TEST_MIHOMO")
+	if binary == "" {
+		t.Skip("set VELA_TEST_MIHOMO for subscription selection integration")
+	}
+	body := "proxy-groups:\n  - name: Choose\n    type: select\n    proxies: [DIRECT, REJECT]\nrules: ['MATCH,Choose']\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+	defer server.Close()
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	subs := profile.NewSubscriptions(store, &testURLStore{})
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, subs, dir, binary, port, nil, nil)
+	t.Cleanup(runner.Close)
+	if _, err := runner.ImportSubscription(server.URL); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := subs.List()
+	if _, err := runner.SelectSubscription(items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Select("Choose", "REJECT"); err != nil {
+		t.Fatal(err)
+	}
+	body += "# subscription refreshed\n"
+	if _, err := runner.UpdateSubscription(items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := runner.Groups()
+	if err != nil || groups[0].Current != "REJECT" {
+		t.Fatalf("reload lost choice: %+v, %v", groups, err)
+	}
+	body = strings.Replace(body, "[DIRECT, REJECT]", "[DIRECT]", 1)
+	if _, err := runner.UpdateSubscription(items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := store.SelectedOptions()
+	if err != nil || len(selected) != 0 {
+		t.Fatalf("reload retained removed node: %v, %v", selected, err)
+	}
+}

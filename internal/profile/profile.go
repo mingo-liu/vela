@@ -18,8 +18,9 @@ import (
 const MaxConfigSize = 2 << 20
 
 type Store struct {
-	path       string
-	settingsMu sync.Mutex
+	path          string
+	settingsMu    sync.Mutex
+	subscriptions *Subscriptions
 }
 
 func NewStore(dataDir string) *Store {

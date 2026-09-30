@@ -15,7 +15,20 @@ func (s *Store) selectionCatalog() (map[string]map[string]string, string, error)
 		return nil, "", err
 	}
 	sum := sha256.Sum256(profile)
-	key := hex.EncodeToString(sum[:])
+	legacyKey := hex.EncodeToString(sum[:])
+	key := legacyKey
+	if s.subscriptions != nil {
+		items, err := s.subscriptions.List()
+		if err != nil {
+			return nil, "", err
+		}
+		for _, item := range items {
+			if item.Active {
+				key = "subscription:" + item.ID
+				break
+			}
+		}
+	}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(s.path), "selections.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return make(map[string]map[string]string), key, nil
@@ -26,6 +39,15 @@ func (s *Store) selectionCatalog() (map[string]map[string]string, string, error)
 	var catalog map[string]map[string]string
 	if err := json.Unmarshal(data, &catalog); err != nil || catalog == nil {
 		return nil, "", errors.New("无法读取已保存的节点选择")
+	}
+	// Migrate existing choices once. Removing the old content key prevents an
+	// independent subscription with identical YAML from inheriting the choice.
+	if key != legacyKey && catalog[key] == nil && catalog[legacyKey] != nil {
+		catalog[key] = catalog[legacyKey]
+		delete(catalog, legacyKey)
+		if err := s.saveSelectionCatalog(catalog); err != nil {
+			return nil, "", err
+		}
 	}
 	return catalog, key, nil
 }
@@ -72,6 +94,40 @@ func (s *Store) SelectOptionInGroup(group, option string, options []string) erro
 		catalog[key] = make(map[string]string)
 	}
 	catalog[key][group] = option
+	return s.saveSelectionCatalog(catalog)
+}
+
+// ReconcileSelectedOptions drops choices whose group or node no longer exists.
+// Call only with effective core groups, after a successful configuration reload:
+// offline YAML cannot enumerate nodes supplied through providers.
+func (s *Store) ReconcileSelectedOptions(groups []SelectorGroup) error {
+	catalog, key, err := s.selectionCatalog()
+	if err != nil {
+		return err
+	}
+	selected := catalog[key]
+	changed := false
+	for group, option := range selected {
+		valid := false
+		for _, candidate := range groups {
+			if candidate.Name == group {
+				for _, name := range candidate.Options {
+					valid = valid || name == option
+				}
+			}
+		}
+		if !valid {
+			delete(selected, group)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return s.saveSelectionCatalog(catalog)
+}
+
+func (s *Store) saveSelectionCatalog(catalog map[string]map[string]string) error {
 	data, err := json.Marshal(catalog)
 	if err != nil {
 		return err

@@ -404,10 +404,8 @@ func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, p
 	if err := r.waitReady(r.done); err != nil {
 		return rollback(fmt.Errorf("切换订阅后内核未就绪: %w", err), true)
 	}
-	if selected, err := r.store.SelectedOptions(); err == nil {
-		for group, option := range selected {
-			_ = r.selectController(group, option)
-		}
+	if err := r.restoreSelectedOptions(); err != nil {
+		_, _ = r.logs.Write([]byte(fmt.Sprintf("level=warning 保存的节点选择恢复失败: %v\n", err)))
 	}
 	return nil
 }
@@ -551,10 +549,8 @@ func (r *Runner) start(tun bool) (State, error) {
 			}
 			return r.fail(fmt.Errorf("内核未就绪: %w", err))
 		}
-		if selected, err := r.store.SelectedOptions(); err == nil {
-			for group, option := range selected {
-				_ = r.selectController(group, option)
-			}
+		if err := r.restoreSelectedOptions(); err != nil {
+			_, _ = r.logs.Write([]byte(fmt.Sprintf("level=warning 保存的节点选择恢复失败: %v\n", err)))
 		}
 		r.state.Status = "running"
 		r.state.TunEnabled = tun
@@ -1135,11 +1131,28 @@ func (r *Runner) controllerSelection(group, option string) (Group, error) {
 	return Group{}, errors.New("策略组不可手动选择")
 }
 
-func (r *Runner) selectController(group, option string) error {
-	if _, err := r.controllerSelection(group, option); err != nil {
+func (r *Runner) restoreSelectedOptions() error {
+	groups, err := r.controllerGroups()
+	if err != nil {
 		return err
 	}
-	return r.writeControllerSelection(group, option)
+	selected, err := r.store.SelectedOptions()
+	if err != nil {
+		return err
+	}
+	effective := make([]profile.SelectorGroup, 0, len(groups))
+	for _, group := range groups {
+		effective = append(effective, profile.SelectorGroup{Name: group.Name, Options: group.Options})
+		for _, option := range group.Options {
+			if option == selected[group.Name] {
+				if err := r.writeControllerSelection(group.Name, option); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	return r.store.ReconcileSelectedOptions(effective)
 }
 
 func (r *Runner) writeControllerSelection(group, option string) error {

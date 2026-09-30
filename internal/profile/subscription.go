@@ -62,7 +62,9 @@ func NewSubscriptions(profiles *Store, urls URLStore) *Subscriptions {
 		}
 		return nil
 	}
-	return &Subscriptions{profiles: profiles, urls: urls, client: client}
+	subscriptions := &Subscriptions{profiles: profiles, urls: urls, client: client}
+	profiles.subscriptions = subscriptions
+	return subscriptions
 }
 
 func subscriptionID(address string) string {
@@ -136,6 +138,12 @@ func (s *Subscriptions) List() ([]Subscription, error) {
 }
 
 func (s *Subscriptions) preserveActive(catalog subscriptionCatalog) error {
+	// Capture legacy content-keyed choices before replacing an active YAML.
+	if s.profiles.Exists() {
+		if _, err := s.profiles.SelectedOptions(); err != nil {
+			return err
+		}
+	}
 	for _, subscription := range catalog.Subscriptions {
 		if !subscription.Active || !s.profiles.Exists() {
 			continue
