@@ -175,13 +175,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .subscription-card { position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px; }
 .subscription-card.selected { border-color: #ff9dad; background: #fff0f2; box-shadow: inset 3px 0 #f31645; }
 .subscription-card.selected .subscription-select { opacity: 1; }
-.subscription-card-top { display: flex; align-items: center; justify-content: flex-end; }
+.subscription-card-top { display: flex; align-self: flex-end; align-items: center; justify-content: flex-end; gap: 4px; }
 .subscription-select { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .subscription-select::before { position: absolute; inset: 0; content: ""; }
 .subscription-select:disabled { cursor: default; }
 .subscription-select:focus-visible { outline: 2px solid #e91543; outline-offset: 4px; border-radius: 3px; }
 .subscription-select:not(:disabled):hover .subscription-url { color: #e91543; }
 .subscription-refresh { position: relative; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
+.subscription-delete { margin-left: 4px; }
 .subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
 .subscription-refresh.updating:disabled { opacity: 1; background: #fff0f2; }
 .subscription-refresh.updating svg { animation: operation-spin 1s linear infinite; }
@@ -215,7 +216,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .profile-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .primary-button, .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 39px; padding: 0 14px; border-radius: 10px; font-size: 12px; font-weight: 700; }
 .primary-button { border: 1px solid #ee1643; background: #f31645; color: white; }
-.import-button { width: 150px; min-height: 42px; }
+.import-button { width: max-content; min-width: 150px; min-height: 42px; white-space: nowrap; }
+.import-button svg { flex-shrink: 0; }
 .secondary-button { border: 1px solid #e0e2e5; background: #fff; color: #53565d; }
 .primary-button:hover:not(:disabled) { background: #d90f3c; }
 .secondary-button:hover:not(:disabled) { background: #f5f6f8; }
