@@ -10,6 +10,7 @@ import { translate, localizeError, type Language } from './i18n'
 import TrafficMonitor from './TrafficMonitor'
 import ExitIPCard from './ExitIPCard'
 import Diagnostics from './Diagnostics'
+import SubscriptionEditorDialog from './SubscriptionEditorDialog'
 import { usePolling } from './lib/usePolling'
 import { useWindowVisible } from './lib/useWindowVisible'
 import { createSnapshotReceiver } from './lib/snapshot'
@@ -122,7 +123,7 @@ export default function App() {
   const [subscriptionURL, setSubscriptionURL] = useState('')
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [editingSubscription, setEditingSubscription] = useState<string | null>(null)
-  const [subscriptionDraft, setSubscriptionDraft] = useState('')
+  const [subscriptionEditError, setSubscriptionEditError] = useState('')
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [coreInfo, setCoreInfo] = useState<CoreInfo | null>(null)
   const [coreInfoError, setCoreInfoError] = useState('')
@@ -161,6 +162,7 @@ export default function App() {
   }
 
   useEffect(() => { document.documentElement.lang = language }, [language])
+  useEffect(() => { if (page !== 'profiles') setEditingSubscription(null) }, [page])
 
   useEffect(() => Events.On('open-settings', () => setPage('settings')), [])
   useEffect(() => Events.On('open-logs', () => setPage('logs')), [])
@@ -237,14 +239,14 @@ export default function App() {
     }
   }
 
-  const execute = async (action: () => Promise<State>) => {
+  const execute = async (action: () => Promise<State>, onError = setNotice) => {
     startAction()
     setNotice('')
     try {
       stateReceiver.receive(await action())
       return true
     } catch (error) {
-      setNotice(message(error))
+      onError(message(error))
       await stateReceiver.refresh(Runtime.State, () => true).catch(() => {})
       return false
     } finally {
@@ -364,8 +366,10 @@ export default function App() {
     if (await execute(() => Runtime.SelectSubscription(id))) await refreshSubscriptions()
   }
 
-  const saveSubscriptionURL = async (id: string) => {
-    if (await execute(() => Runtime.ReplaceSubscriptionURL(id, subscriptionDraft.trim()))) {
+  const saveSubscriptionURL = async (id: string, url: string) => {
+    if (controlsBusy) return
+    setSubscriptionEditError('')
+    if (await execute(() => Runtime.ReplaceSubscriptionURL(id, url), setSubscriptionEditError)) {
       setEditingSubscription(null)
       await refreshSubscriptions()
     }
@@ -388,6 +392,7 @@ export default function App() {
 
   const running = state.status === 'running'
   const connected = state.systemProxyEnabled || state.tunEnabled
+  const editedSubscription = subscriptions.find(subscription => subscription.id === editingSubscription)
   const logLines = useMemo(() => logs.split(/\r?\n/).filter(line => line.trim() !== ''), [logs])
   const visibleLogLines = useMemo(() => logLines.map(line => ({ line, level: logLevel(line) })).filter(entry => selectedLogLevel === 'all' || entry.level === selectedLogLevel), [logLines, selectedLogLevel])
 
@@ -482,7 +487,7 @@ export default function App() {
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
                     <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
-                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setEditingSubscription(subscription.id); setSubscriptionDraft(subscription.url) }}><PencilSimple size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setSubscriptionEditError(''); setEditingSubscription(subscription.id) }}><PencilSimple size={17} /></button>
                     <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => void removeSubscription(subscription)}><Trash size={17} /></button>
                   </div>
                   <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={controlsBusy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
@@ -491,7 +496,6 @@ export default function App() {
                     <span className="subscription-dates"><span>{t('到期')} {formatDate(subscription.expiresAt, language)}</span><span>{t('更新')} {formatDate(subscription.updatedAt, language)}</span></span>
                   </button>
                   {subscription.lastUpdateError && <small className="subscription-error" title={localizeError(language, subscription.lastUpdateError)}>{t('自动更新失败')}：{localizeError(language, subscription.lastUpdateError)}</small>}
-                  {editingSubscription === subscription.id && <div className="subscription-editor"><label className="field-label" htmlFor={`subscription-edit-${subscription.id}`}>{t('订阅链接')}</label><input className="text-field" id={`subscription-edit-${subscription.id}`} type="url" value={subscriptionDraft} disabled={controlsBusy} onChange={event => setSubscriptionDraft(event.target.value)} /><div className="subscription-editor-actions"><button className="secondary-button" type="button" disabled={controlsBusy} onClick={() => setEditingSubscription(null)}>{t('取消')}</button><button className="primary-button" type="button" disabled={controlsBusy || !subscriptionDraft.trim()} onClick={() => void saveSubscriptionURL(subscription.id)}>{t('保存并更新')}</button></div></div>}
                 </article>
               })}
             </div>
@@ -543,5 +547,6 @@ export default function App() {
         </div>
       </>}
     </main>
+    {page === 'profiles' && editedSubscription && <SubscriptionEditorDialog key={editedSubscription.id} url={editedSubscription.url} domain={subscriptionDomain(editedSubscription.url, language)} language={language} busy={controlsBusy} error={subscriptionEditError} onClose={() => setEditingSubscription(null)} onSave={url => saveSubscriptionURL(editedSubscription.id, url)} />}
   </div>
 }

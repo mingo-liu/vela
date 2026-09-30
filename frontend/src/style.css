@@ -183,10 +183,18 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .subscription-select:not(:disabled):hover .subscription-url { color: #e91543; }
 .subscription-refresh { position: relative; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
 .subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
-.subscription-editor { position: relative; z-index: 1; padding-top: 10px; border-top: 1px solid #eceef1; }
-.subscription-editor .field-label { margin: 0 0 8px; }
-.subscription-editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
-.subscription-editor-actions .primary-button, .subscription-editor-actions .secondary-button { min-height: 34px; padding: 0 9px; }
+.subscription-dialog { width: min(480px, calc(100% - 40px)); max-height: calc(100% - 40px); margin: auto; padding: 24px; overflow-y: auto; border: 1px solid #e7e8eb; border-radius: 20px; background: #fff; color: #24272d; box-shadow: 0 24px 80px rgba(23, 28, 36, .18); }
+.subscription-dialog::backdrop { background: rgba(23, 28, 36, .3); }
+.subscription-dialog-heading { display: flex; align-items: center; gap: 13px; }
+.subscription-dialog-title { flex: 1; min-width: 0; }
+.subscription-dialog-title h2 { margin: 0; font-size: 18px; letter-spacing: -.025em; }
+.subscription-dialog-title p { margin: 5px 0 0; overflow: hidden; color: #62666d; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.subscription-dialog-close { display: grid; place-items: center; align-self: flex-start; flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #7a7d84; }
+.subscription-dialog-close:hover:not(:disabled) { background: #f5f6f8; color: #24272d; }
+.subscription-dialog .field-label { margin: 24px 0 9px; }
+.subscription-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.subscription-dialog-actions button { white-space: nowrap; }
+.subscription-dialog-error { margin: 12px 0 0; color: #b91337; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .subscription-error { position: relative; z-index: 1; color: #b91337; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .subscription-url { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: #24272d; font-size: 12px; line-height: 1.4; user-select: text; }
 .subscription-url svg { flex: none; margin-top: 1px; color: #f31645; }

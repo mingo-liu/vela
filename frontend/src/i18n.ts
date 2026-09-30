@@ -126,6 +126,8 @@ const english: Record<string, string> = {
   '确定删除此订阅？当前配置会保留。': 'Delete this subscription? The current profile will remain.',
   '取消': 'Cancel',
   '保存并更新': 'Save and update',
+  '保存并更新中…': 'Saving and updating…',
+  '关闭弹窗': 'Close dialog',
   '自动更新失败': 'Automatic update failed',
   '当前订阅': 'Current subscription',
   '选择订阅': 'Select subscription',
