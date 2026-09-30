@@ -194,6 +194,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .subscription-dialog-close { display: grid; place-items: center; align-self: flex-start; flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #7a7d84; }
 .subscription-dialog-close:hover:not(:disabled) { background: #f5f6f8; color: #24272d; }
 .subscription-dialog .field-label { margin: 24px 0 9px; }
+.subscription-dialog-description { margin: 24px 0 0; color: #62666d; font-size: 14px; line-height: 1.6; }
 .subscription-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 .subscription-dialog-actions button { white-space: nowrap; }
 .subscription-dialog-error { margin: 12px 0 0; color: #b91337; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

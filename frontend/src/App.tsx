@@ -11,6 +11,7 @@ import TrafficMonitor from './TrafficMonitor'
 import ExitIPCard from './ExitIPCard'
 import Diagnostics from './Diagnostics'
 import SubscriptionEditorDialog from './SubscriptionEditorDialog'
+import SubscriptionDeleteDialog from './SubscriptionDeleteDialog'
 import { usePolling } from './lib/usePolling'
 import { useWindowVisible } from './lib/useWindowVisible'
 import { createSnapshotReceiver } from './lib/snapshot'
@@ -124,6 +125,8 @@ export default function App() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [editingSubscription, setEditingSubscription] = useState<string | null>(null)
   const [subscriptionEditError, setSubscriptionEditError] = useState('')
+  const [deletingSubscription, setDeletingSubscription] = useState<string | null>(null)
+  const [subscriptionDeleteError, setSubscriptionDeleteError] = useState('')
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [coreInfo, setCoreInfo] = useState<CoreInfo | null>(null)
   const [coreInfoError, setCoreInfoError] = useState('')
@@ -162,7 +165,12 @@ export default function App() {
   }
 
   useEffect(() => { document.documentElement.lang = language }, [language])
-  useEffect(() => { if (page !== 'profiles') setEditingSubscription(null) }, [page])
+  useEffect(() => {
+    if (page !== 'profiles') {
+      setEditingSubscription(null)
+      setDeletingSubscription(null)
+    }
+  }, [page])
 
   useEffect(() => Events.On('open-settings', () => setPage('settings')), [])
   useEffect(() => Events.On('open-logs', () => setPage('logs')), [])
@@ -376,15 +384,18 @@ export default function App() {
   }
 
   const removeSubscription = async (subscription: Subscription) => {
-    if (!window.confirm(t('确定删除此订阅？当前配置会保留。'))) return
+    if (controlsBusy || pendingActions.current > 0) return
     startAction()
     setNotice('')
+    setSubscriptionDeleteError('')
     try {
       await Runtime.RemoveSubscription(subscription.id)
+      setSubscriptions(current => current.filter(item => item.id !== subscription.id))
+      setDeletingSubscription(null)
       if (editingSubscription === subscription.id) setEditingSubscription(null)
       await refreshSubscriptions()
     } catch (error) {
-      setNotice(message(error))
+      setSubscriptionDeleteError(message(error))
     } finally {
       finishAction()
     }
@@ -393,6 +404,7 @@ export default function App() {
   const running = state.status === 'running'
   const connected = state.systemProxyEnabled || state.tunEnabled
   const editedSubscription = subscriptions.find(subscription => subscription.id === editingSubscription)
+  const subscriptionToDelete = subscriptions.find(subscription => subscription.id === deletingSubscription)
   const logLines = useMemo(() => logs.split(/\r?\n/).filter(line => line.trim() !== ''), [logs])
   const visibleLogLines = useMemo(() => logLines.map(line => ({ line, level: logLevel(line) })).filter(entry => selectedLogLevel === 'all' || entry.level === selectedLogLevel), [logLines, selectedLogLevel])
 
@@ -490,7 +502,7 @@ export default function App() {
                   <div className="subscription-card-top">
                     <button className={`subscription-refresh${updating ? ' updating' : ''}`} type="button" disabled={controlsBusy} aria-busy={updating || undefined} aria-label={refreshLabel} title={refreshLabel} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                     <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setSubscriptionEditError(''); setEditingSubscription(subscription.id) }}><PencilSimple size={17} /></button>
-                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => void removeSubscription(subscription)}><Trash size={17} /></button>
+                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => { setSubscriptionDeleteError(''); setDeletingSubscription(subscription.id) }}><Trash size={17} /></button>
                   </div>
                   <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={controlsBusy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
                     <span className="subscription-url" title={domain}><LinkSimple size={15} /><span>{domain}</span></span>
@@ -550,5 +562,6 @@ export default function App() {
       </>}
     </main>
     {page === 'profiles' && editedSubscription && <SubscriptionEditorDialog key={editedSubscription.id} url={editedSubscription.url} domain={subscriptionDomain(editedSubscription.url, language)} language={language} busy={controlsBusy} error={subscriptionEditError} onClose={() => setEditingSubscription(null)} onSave={url => saveSubscriptionURL(editedSubscription.id, url)} />}
+    {page === 'profiles' && subscriptionToDelete && <SubscriptionDeleteDialog key={subscriptionToDelete.id} domain={subscriptionDomain(subscriptionToDelete.url, language)} language={language} busy={controlsBusy} error={subscriptionDeleteError} onClose={() => setDeletingSubscription(null)} onConfirm={() => removeSubscription(subscriptionToDelete)} />}
   </div>
 }

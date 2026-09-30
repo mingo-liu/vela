@@ -123,6 +123,7 @@ const english: Record<string, string> = {
   '更新并设为当前配置': 'Update and set as current profile',
   '编辑订阅地址': 'Edit subscription URL',
   '删除订阅': 'Delete subscription',
+  '正在删除…': 'Deleting…',
   '确定删除此订阅？当前配置会保留。': 'Delete this subscription? The current profile will remain.',
   '取消': 'Cancel',
   '保存并更新': 'Save and update',
