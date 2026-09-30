@@ -46,16 +46,22 @@ func (s *Store) SelectOption(group, option string) error {
 	if err != nil {
 		return err
 	}
-	valid := false
 	for _, candidate := range groups {
-		if candidate.Name != group {
-			continue
-		}
-		for _, name := range candidate.Options {
-			valid = valid || name == option
+		if candidate.Name == group {
+			return s.SelectOptionInGroup(group, option, candidate.Options)
 		}
 	}
-	if !valid {
+	return errors.New("策略组不可手动选择")
+}
+
+// SelectOptionInGroup saves a choice validated against the effective options
+// returned by the core, including nodes supplied through proxy providers.
+func (s *Store) SelectOptionInGroup(group, option string, options []string) error {
+	valid := false
+	for _, name := range options {
+		valid = valid || name == option
+	}
+	if group == "" || option == "" || !valid {
 		return errors.New("节点不在策略组中")
 	}
 	catalog, key, err := s.selectionCatalog()

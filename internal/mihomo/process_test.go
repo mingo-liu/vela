@@ -838,3 +838,47 @@ func (s *testURLStore) Get() (string, error) {
 }
 func (s *testURLStore) Put(value string) error { s.value = value; return nil }
 func (s *testURLStore) Delete() error          { s.value = ""; return nil }
+
+func TestProviderSelectionPersistsAndRollsBack(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	if err := store.Import("proxy-providers:\n  remote:\n    type: http\n    url: https://example.com/proxies.yaml\nproxy-groups:\n  - name: Choose\n    type: select\n    use: [remote]\n"); err != nil {
+		t.Fatal(err)
+	}
+	current := "Provider A"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{"proxies": map[string]any{"Choose": map[string]any{"type": "Selector", "now": current, "all": []string{"Provider A", "Provider B"}}}})
+		case http.MethodPut:
+			var choice struct{ Name string }
+			_ = json.NewDecoder(request.Body).Decode(&choice)
+			current = choice.Name
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+	address, _ := url.Parse(server.URL)
+	runner := NewRunner(store, nil, dir, "", 7890, nil, nil)
+	runner.apiPort, _ = strconv.Atoi(address.Port())
+	runner.state.Status = "running"
+	if err := runner.Select("Choose", "Provider B"); err != nil {
+		t.Fatal(err)
+	}
+	choices, err := store.SelectedOptions()
+	if err != nil || choices["Choose"] != "Provider B" || current != "Provider B" {
+		t.Fatalf("provider choice: %v, current=%s, err=%v", choices, current, err)
+	}
+	if err := runner.Select("Choose", "missing"); err == nil || current != "Provider B" {
+		t.Fatal("invalid choice changed the core")
+	}
+	if err := os.Remove(filepath.Join(dir, "selections.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "selections.json"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Select("Choose", "Provider A"); err == nil || current != "Provider B" {
+		t.Fatalf("failed persistence did not restore the core: %s, %v", current, err)
+	}
+}

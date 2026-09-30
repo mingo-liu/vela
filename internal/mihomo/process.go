@@ -961,6 +961,11 @@ func (r *Runner) Groups() ([]Group, error) {
 		sortGroups(groups)
 		return groups, nil
 	}
+	return r.controllerGroups()
+}
+
+// controllerGroups is called with the runner mutex held.
+func (r *Runner) controllerGroups() ([]Group, error) {
 	var response struct {
 		Proxies map[string]struct {
 			Type string   `json:"type"`
@@ -1088,39 +1093,56 @@ func testProxyDelay(client *http.Client, apiPort int, secret, option string) (in
 }
 
 func (r *Runner) Select(group, option string) error {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.state.Status != "running" {
 		return r.store.SelectOption(group, option)
 	}
-	if err := r.selectController(group, option); err != nil {
+	candidate, err := r.controllerSelection(group, option)
+	if err != nil {
 		return err
 	}
-	return r.store.SelectOption(group, option)
+	if err := r.writeControllerSelection(group, option); err != nil {
+		return err
+	}
+	if err := r.store.SelectOptionInGroup(group, option, candidate.Options); err != nil {
+		if candidate.Current != "" {
+			return errors.Join(err, r.writeControllerSelection(group, candidate.Current))
+		}
+		return err
+	}
+	return nil
 }
 
-// selectController is called with the runner mutex held.
-func (r *Runner) selectController(group, option string) error {
-	var response struct {
-		Proxies map[string]struct {
-			Type string   `json:"type"`
-			All  []string `json:"all"`
-		} `json:"proxies"`
+// These controller helpers are called with the runner mutex held.
+func (r *Runner) controllerSelection(group, option string) (Group, error) {
+	groups, err := r.controllerGroups()
+	if err != nil {
+		return Group{}, err
 	}
-	if err := r.request(http.MethodGet, "/proxies", nil, &response); err != nil {
+	for _, candidate := range groups {
+		if candidate.Name == group {
+			for _, name := range candidate.Options {
+				if name == option {
+					return candidate, nil
+				}
+			}
+			return Group{}, errors.New("节点不在策略组中")
+		}
+	}
+	return Group{}, errors.New("策略组不可手动选择")
+}
+
+func (r *Runner) selectController(group, option string) error {
+	if _, err := r.controllerSelection(group, option); err != nil {
 		return err
 	}
-	p, ok := response.Proxies[group]
-	if !ok || p.Type != "Selector" {
-		return errors.New("策略组不可手动选择")
-	}
-	valid := false
-	for _, candidate := range p.All {
-		valid = valid || candidate == option
-	}
-	if !valid {
-		return errors.New("节点不在策略组中")
-	}
+	return r.writeControllerSelection(group, option)
+}
+
+func (r *Runner) writeControllerSelection(group, option string) error {
 	body, err := json.Marshal(map[string]string{"name": option})
 	if err != nil {
 		return err
