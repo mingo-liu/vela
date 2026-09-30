@@ -183,6 +183,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .subscription-select:not(:disabled):hover .subscription-url { color: #e91543; }
 .subscription-refresh { position: relative; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #e91543; }
 .subscription-refresh:hover:not(:disabled) { background: #fff0f2; }
+.subscription-refresh.updating:disabled { opacity: 1; background: #fff0f2; }
+.subscription-refresh.updating svg { animation: operation-spin 1s linear infinite; }
 .subscription-dialog { width: min(480px, calc(100% - 40px)); max-height: calc(100% - 40px); margin: auto; padding: 24px; overflow-y: auto; border: 1px solid #e7e8eb; border-radius: 20px; background: #fff; color: #24272d; box-shadow: 0 24px 80px rgba(23, 28, 36, .18); }
 .subscription-dialog::backdrop { background: rgba(23, 28, 36, .3); }
 .subscription-dialog-heading { display: flex; align-items: center; gap: 13px; }
@@ -306,3 +308,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .operation-banner > div { display: grid; gap: 8px; min-width: 0; flex: 1; font-size: 13px; }
 .operation-banner span { color: #62666d; overflow-wrap: anywhere; }
 .operation-banner progress { width: 100%; height: 6px; accent-color: #f31645; }
+
+@keyframes operation-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .subscription-refresh.updating svg { animation: none; }
+}

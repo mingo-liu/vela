@@ -407,8 +407,8 @@ export default function App() {
     </aside>
 
     <main className="content">
-      {operation?.active && <div className="operation-banner" role="status" aria-live="polite">
-        <div><strong>{t(operation.phase === 'cancelling' ? '正在取消…' : operation.phase === 'applying' ? '正在应用配置…' : operation.kind === 'delay' ? '正在测试节点延迟' : '正在下载订阅…')}</strong>
+      {operation?.active && operation.kind === 'delay' && <div className="operation-banner" role="status" aria-live="polite">
+        <div><strong>{t(operation.phase === 'cancelling' ? '正在取消…' : '正在测试节点延迟')}</strong>
           {operation.kind === 'delay' && <span>{operation.target} · {operation.completed} / {operation.total}</span>}
           {operation.kind === 'delay' && operation.total > 0 && <progress value={operation.completed} max={operation.total} aria-label={t('测速进度')} />}
         </div>
@@ -484,9 +484,11 @@ export default function App() {
                 const remaining = subscription.total !== null && subscription.upload !== null && subscription.download !== null
                   ? Math.max(0, subscription.total - subscription.upload - subscription.download) : null
                 const domain = subscriptionDomain(subscription.url, language)
+                const updating = operation?.active && operation.kind === 'subscription' && operation.target === subscription.id
+                const refreshLabel = updating ? t(operation.phase === 'cancelling' ? '正在取消…' : operation.phase === 'applying' ? '正在应用配置…' : '正在获取更新…') : subscription.active ? t('更新此订阅') : t('更新并设为当前配置')
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
-                    <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} title={subscription.active ? t('更新此订阅') : t('更新并设为当前配置')} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
+                    <button className={`subscription-refresh${updating ? ' updating' : ''}`} type="button" disabled={controlsBusy} aria-busy={updating || undefined} aria-label={refreshLabel} title={refreshLabel} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                     <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => { setSubscriptionEditError(''); setEditingSubscription(subscription.id) }}><PencilSimple size={17} /></button>
                     <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => void removeSubscription(subscription)}><Trash size={17} /></button>
                   </div>

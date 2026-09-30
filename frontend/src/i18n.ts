@@ -8,7 +8,7 @@ const english: Record<string, string> = {
   '正在取消…': 'Cancelling…',
   '正在应用配置…': 'Applying configuration…',
   '正在测试节点延迟': 'Testing node latency',
-  '正在下载订阅…': 'Downloading subscription…',
+  '正在获取更新…': 'Fetching updates…',
   '测速进度': 'Latency test progress',
   '首页': 'Home',
   '代理': 'Proxies',
