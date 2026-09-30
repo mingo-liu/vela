@@ -120,7 +120,6 @@ const english: Record<string, string> = {
   '已保存的订阅': 'Saved subscriptions',
   '还没有订阅。请在下方粘贴订阅地址导入。': 'No subscriptions yet. Paste a subscription URL below to import one.',
   '更新此订阅': 'Update this subscription',
-  '更新并设为当前配置': 'Update and set as current profile',
   '编辑订阅地址': 'Edit subscription URL',
   '删除订阅': 'Delete subscription',
   '正在删除…': 'Deleting…',

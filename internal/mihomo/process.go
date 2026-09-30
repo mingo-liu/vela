@@ -236,6 +236,15 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	items, err := r.subs.List()
+	if err != nil {
+		return r.state, err
+	}
+	for _, item := range items {
+		if item.ID == id && !item.Active {
+			return r.state, r.subs.RefreshInactiveDownloaded(id, download)
+		}
+	}
 	if r.cmd != nil && r.state.Status != "running" {
 		return r.state, errors.New("内核正在切换状态，请稍后重试")
 	}

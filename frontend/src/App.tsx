@@ -497,7 +497,7 @@ export default function App() {
                   ? Math.max(0, subscription.total - subscription.upload - subscription.download) : null
                 const domain = subscriptionDomain(subscription.url, language)
                 const updating = operation?.active && operation.kind === 'subscription' && operation.target === subscription.id
-                const refreshLabel = updating ? t(operation.phase === 'cancelling' ? '正在取消…' : operation.phase === 'applying' ? '正在应用配置…' : '正在获取更新…') : subscription.active ? t('更新此订阅') : t('更新并设为当前配置')
+                const refreshLabel = updating ? t(operation.phase === 'cancelling' ? '正在取消…' : operation.phase === 'applying' ? '正在应用配置…' : '正在获取更新…') : t('更新此订阅')
                 return <article className={`panel subscription-card${subscription.active ? ' selected' : ''}`} key={subscription.id}>
                   <div className="subscription-card-top">
                     <button className={`subscription-refresh${updating ? ' updating' : ''}`} type="button" disabled={controlsBusy} aria-busy={updating || undefined} aria-label={refreshLabel} title={refreshLabel} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>

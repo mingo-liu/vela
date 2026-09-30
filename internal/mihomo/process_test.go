@@ -459,6 +459,79 @@ func TestSelectSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	}
 }
 
+func TestUpdateInactiveSubscriptionWhileStoppedPreservesSelection(t *testing.T) {
+	for _, current := range []string{"subscription", "local", "none"} {
+		t.Run(current, func(t *testing.T) {
+			one := "rules: [MATCH,DIRECT]\n"
+			two := "rules: [MATCH,REJECT]\n"
+			updated := "rules: [MATCH,DIRECT]\n# refreshed\n"
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/one" {
+					_, _ = w.Write([]byte(one))
+					return
+				}
+				requests++
+				if requests == 1 {
+					w.Header().Set("subscription-userinfo", "upload=0; download=1; total=100")
+					_, _ = w.Write([]byte(two))
+				} else {
+					w.Header().Set("subscription-userinfo", "upload=0; download=2; total=100")
+					_, _ = w.Write([]byte(updated))
+				}
+			}))
+			defer server.Close()
+			dir := t.TempDir()
+			store := profile.NewStore(dir)
+			subs := profile.NewSubscriptions(store, &testURLStore{})
+			runner := NewRunner(store, subs, dir, "", 7890, nil, nil)
+			for _, path := range []string{"/one", "/two"} {
+				if _, err := runner.ImportSubscription(server.URL + path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			items, err := subs.List()
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch current {
+			case "subscription":
+				if _, err := runner.SelectSubscription(items[0].ID); err != nil {
+					t.Fatal(err)
+				}
+			case "local":
+				if _, err := runner.Import(one); err != nil {
+					t.Fatal(err)
+				}
+			}
+			previousState := runner.Snapshot()
+			state, err := runner.UpdateSubscription(items[1].ID)
+			if err != nil || state != previousState {
+				t.Fatalf("inactive update changed state: %+v, %v", state, err)
+			}
+			items, err = subs.List()
+			if err != nil || items[0].Active != (current == "subscription") || items[1].Active {
+				t.Fatalf("inactive update changed selection: %+v, %v", items, err)
+			}
+			if items[1].Download == nil || *items[1].Download != 2 {
+				t.Fatalf("inactive update did not refresh usage: %+v", items[1])
+			}
+			cached, err := store.LoadSubscription(items[1].ID)
+			if err != nil || string(cached) != updated {
+				t.Fatalf("inactive update did not refresh cached profile: %q, %v", cached, err)
+			}
+			active, err := store.Load()
+			if current == "none" {
+				if store.Exists() {
+					t.Fatalf("inactive update created an active profile: %q, %v", active, err)
+				}
+			} else if err != nil || string(active) != one {
+				t.Fatalf("inactive update changed active profile: %q, %v", active, err)
+			}
+		})
+	}
+}
+
 func TestUpdateSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	config := func(name, option string) string {
 		return "proxy-groups:\n  - name: " + name + "\n    type: select\n    proxies: [" + option + "]\nrules: [MATCH,DIRECT]\n"
@@ -529,39 +602,37 @@ func TestUpdateSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	runner.done = make(chan struct{})
 	runner.secret = "test-secret"
 
+	previousState := runner.Snapshot()
 	two = config("Updated", "DIRECT")
 	state, err := runner.UpdateSubscription(list[1].ID)
-	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Updated") {
-		t.Fatalf("online update did not reload the profile: %+v, %v, %q", state, err, loadedConfig)
+	if err != nil || state != previousState || loadedConfig != "" {
+		t.Fatalf("inactive update changed the running core: %+v, %v, %q", state, err, loadedConfig)
 	}
 	list, err = subs.List()
-	if err != nil || list[0].Active || !list[1].Active {
-		t.Fatalf("online update did not select the subscription: %+v, %v", list, err)
+	if err != nil || !list[0].Active || list[1].Active {
+		t.Fatalf("inactive update changed the subscription selection: %+v, %v", list, err)
+	}
+	cached, err := store.LoadSubscription(list[1].ID)
+	if err != nil || string(cached) != two {
+		t.Fatalf("inactive update did not refresh cached profile: %q, %v", cached, err)
+	}
+	active, err := store.Load()
+	if err != nil || string(active) != one {
+		t.Fatalf("inactive update changed active profile: %q, %v", active, err)
+	}
+	if _, err := runner.SelectSubscription(list[1].ID); err != nil {
+		t.Fatal(err)
 	}
 	two = config("Refreshed", "REJECT")
 	state, err = runner.UpdateSubscription(list[1].ID)
 	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Refreshed") {
 		t.Fatalf("active subscription update did not reload the profile: %+v, %v, %q", state, err, loadedConfig)
 	}
-	previousUpdatedAt := *list[0].UpdatedAt
-	one = config("Bad", "DIRECT")
-	state, err = runner.UpdateSubscription(list[0].ID)
-	if err == nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Refreshed") {
-		t.Fatalf("failed update changed the connection: %+v, %v, %q", state, err, loadedConfig)
-	}
 	list, err = subs.List()
-	if err != nil || list[0].Active || !list[1].Active || !list[0].UpdatedAt.Equal(previousUpdatedAt) {
-		t.Fatalf("failed update changed subscriptions: %+v, %v", list, err)
+	if err != nil || list[0].Active || !list[1].Active {
+		t.Fatalf("active update changed subscriptions: %+v, %v", list, err)
 	}
-	cached, err := store.LoadSubscription(list[0].ID)
-	if err != nil || string(cached) != config("One", "DIRECT") {
-		t.Fatalf("failed update changed cached profile: %q, %v", cached, err)
-	}
-	active, err := store.Load()
-	if err != nil || string(active) != two {
-		t.Fatalf("failed update changed active profile: %q, %v", active, err)
-	}
-	previousUpdatedAt = *list[1].UpdatedAt
+	previousUpdatedAt := *list[1].UpdatedAt
 	two = config("Bad", "DIRECT")
 	state, err = runner.UpdateSubscription(list[1].ID)
 	if err == nil || state.Status != "running" || !state.SystemProxyEnabled || !strings.Contains(loadedConfig, "name: Refreshed") {
