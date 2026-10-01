@@ -4,6 +4,7 @@ package macos
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -90,5 +91,86 @@ func TestTunHelperAcceptsOnlyManagedConfig(t *testing.T) {
 		if _, err := validateManagedTunConfig(changed, raw, profile.RoutingRule); err == nil {
 			t.Fatalf("accepted altered root config: %s", changed)
 		}
+	}
+}
+
+func TestTunCustomRulesReadAndValidation(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	raw := []byte("rules: ['MATCH,DIRECT']\n")
+	if got, err := applyTunCustomRules(root, raw); err != nil || !bytes.Equal(got, raw) {
+		t.Fatalf("missing custom file = %s, %v", got, err)
+	}
+	store := profile.NewStore(dir)
+	custom := []profile.CustomRule{{ID: "one", Type: "DOMAIN", Domain: "example.com", Target: "REJECT", Enabled: true}}
+	if err := store.SaveCustomRules(custom); err != nil {
+		t.Fatal(err)
+	}
+	effective, err := applyTunCustomRules(root, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	compiled, err := profile.CompileForMode(effective, 7890, 19090, secret, true, profile.RoutingRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateManagedTunConfig(compiled, effective, profile.RoutingRule); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateManagedTunConfig(compiled, raw, profile.RoutingRule); err == nil {
+		t.Fatal("custom rules accepted without source verification")
+	}
+	if err := os.WriteFile(filepath.Join(dir, profile.LocalCustomRulesFile), []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyTunCustomRules(root, raw); err == nil {
+		t.Fatal("corrupt custom rules ignored")
+	}
+}
+
+func TestTunCustomRulesFollowSelectedSubscription(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	subs := profile.NewSubscriptions(store, profile.NewFileURLStore(dir, nil))
+	raw := []byte("rules: ['MATCH,DIRECT']\n")
+	for _, address := range []string{"https://example.invalid/one", "https://example.invalid/two"} {
+		if err := subs.ImportDownloaded(profile.DownloadedSubscription{URL: address, Data: raw}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := subs.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProfileCustomRules(items[0].ID, []profile.CustomRule{{ID: "one", Type: "DOMAIN", Domain: "example.com", Target: "REJECT", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for index, item := range items {
+		if err := subs.Select(context.Background(), item.ID); err != nil {
+			t.Fatal(err)
+		}
+		got, err := applyTunCustomRules(root, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(got, []byte("DOMAIN,example.com,REJECT")) != (index == 0) {
+			t.Fatalf("TUN used wrong rule scope: %s", got)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "subscriptions.json"), []byte(`{"subscriptions":[{"id":"../../outside","active":true}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyTunCustomRules(root, raw); err == nil {
+		t.Fatal("unsafe subscription path accepted")
 	}
 }

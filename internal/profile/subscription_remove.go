@@ -18,6 +18,11 @@ func (s *Subscriptions) removeSubscriptionFiles(removed Subscription, remaining 
 	dir := filepath.Dir(s.profiles.path)
 	cachePath := filepath.Join(dir, "subscriptions", removed.ID+".yaml")
 	paths := map[string]bool{cachePath: true}
+	rulePath, err := CustomRulesPath(removed.ID)
+	if err != nil {
+		return nil, err
+	}
+	paths[filepath.Join(dir, rulePath)] = true
 	if removed.Active {
 		paths[s.profiles.path] = true
 		paths[filepath.Join(dir, "runtime.yaml")] = true
@@ -37,7 +42,10 @@ func (s *Subscriptions) removeSubscriptionFiles(removed Subscription, remaining 
 	// HTTP provider caches may be shared by subscriptions or a local profile.
 	// Only remove Vela-owned downloads no remaining profile references.
 	providers := map[string]bool{}
-	for _, data := range backups {
+	for path, data := range backups {
+		if filepath.Ext(path) != ".yaml" {
+			continue
+		}
 		if err := collectProviderCaches(data, providers, false); err != nil {
 			return nil, err
 		}

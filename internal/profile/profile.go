@@ -17,6 +17,8 @@ import (
 
 const MaxConfigSize = 2 << 20
 
+var ErrNoProfile = errors.New("请先导入一份 YAML 配置")
+
 type Store struct {
 	path          string
 	settingsMu    sync.Mutex
@@ -90,7 +92,7 @@ func writeProfile(path, data string) error {
 func (s *Store) Load() ([]byte, error) {
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, errors.New("请先导入一份 YAML 配置")
+		return nil, ErrNoProfile
 	}
 	if err != nil {
 		return nil, err

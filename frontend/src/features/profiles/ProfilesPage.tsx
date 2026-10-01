@@ -8,9 +8,10 @@ type Props = {
   runtime: RuntimeController
   controller: ProfilesController
   language: Language
+  onEditRules: (id: string, title: string) => void
 }
 
-export default function ProfilesPage({ runtime, controller, language }: Props) {
+export default function ProfilesPage({ runtime, controller, language, onEditRules }: Props) {
   const { state, notice, controlsBusy, operation, running } = runtime
   const {
     subscriptions, subscriptionURL, setSubscriptionURL, fileInput,
@@ -35,6 +36,7 @@ export default function ProfilesPage({ runtime, controller, language }: Props) {
               <div className="subscription-card-top">
                 <button className={`subscription-refresh${updating ? ' updating' : ''}`} type="button" disabled={controlsBusy} aria-busy={updating || undefined} aria-label={refreshLabel} title={refreshLabel} onClick={() => void updateSubscription(subscription.id)}><ArrowClockwise size={17} /></button>
                 <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={t('编辑订阅地址')} title={t('编辑订阅地址')} onClick={() => openEditor(subscription.id)}><PencilSimple size={17} /></button>
+                <button className="subscription-refresh" type="button" disabled={controlsBusy} aria-label={`${t('编辑配置')} ${domain}`} title={t('编辑配置')} onClick={() => onEditRules(subscription.id, domain)}><FileText size={17} /></button>
                 <button className="subscription-refresh subscription-delete" type="button" disabled={controlsBusy} aria-label={t('删除订阅')} title={t('删除订阅')} onClick={() => openDeleteDialog(subscription.id)}><Trash size={17} /></button>
               </div>
               <button className="subscription-select" type="button" aria-label={`${subscription.active ? t('当前订阅') : t('选择订阅')} ${domain}`} aria-pressed={subscription.active} disabled={controlsBusy || subscription.active} onClick={() => void selectSubscription(subscription.id)}>
@@ -47,7 +49,7 @@ export default function ProfilesPage({ runtime, controller, language }: Props) {
           })}
         </div>
       </section>
-      <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><FileText size={24} /></div><div><h2>{t('本地配置')}</h2></div></div><button className="primary-button import-button file-button" type="button" disabled={controlsBusy || running} onClick={() => fileInput.current?.click()}>{t('选择 YAML 文件')} <FileArrowDown size={18} /></button><input ref={fileInput} className="file-input" type="file" accept=".yaml,.yml,text/yaml" tabIndex={-1} onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} /></section>
+      <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><FileText size={24} /></div><div><h2>{t('本地配置')}</h2></div></div><div className="profile-actions"><button className="primary-button import-button file-button" type="button" disabled={controlsBusy || running} onClick={() => fileInput.current?.click()}>{t('选择 YAML 文件')} <FileArrowDown size={18} /></button>{state.hasProfile && !subscriptions.some(item => item.active) && <button className="secondary-button" type="button" disabled={controlsBusy} onClick={() => onEditRules('', t('本地配置'))}>{t('编辑配置')} <FileText size={18} /></button>}</div><input ref={fileInput} className="file-input" type="file" accept=".yaml,.yml,text/yaml" tabIndex={-1} onChange={e => { void importFile(e.target.files?.[0]); e.target.value = '' }} /></section>
       <section className="panel profile-card"><div className="panel-heading"><div className="module-icon"><LinkSimple size={24} /></div><div><h2>{t('导入订阅')}</h2></div></div><label className="field-label" htmlFor="subscription-url">{t('订阅链接')}</label><input className="text-field" id="subscription-url" type="url" value={subscriptionURL} disabled={controlsBusy} autoComplete="off" spellCheck={false} placeholder={t('粘贴 HTTP / HTTPS 订阅地址')} onChange={e => setSubscriptionURL(e.target.value)} /><div className="profile-actions"><button className="primary-button import-button" type="button" disabled={controlsBusy || !subscriptionURL} onClick={() => void importSubscription()}>{t('导入订阅')} <DownloadSimple size={18} /></button></div>{subscriptionURL.startsWith('http://') && <small className="http-note">{t('此地址使用 HTTP，访问令牌会在网络上传输明文。')}</small>}</section>
     </div>
   </>

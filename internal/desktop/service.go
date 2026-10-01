@@ -203,3 +203,17 @@ func (s *RuntimeService) Connections() (mihomo.ConnectionSnapshot, error) {
 func (s *RuntimeService) Rules() ([]mihomo.Rule, error) {
 	return s.runner.Rules()
 }
+
+func (s *RuntimeService) CustomRules() ([]profile.CustomRule, error) { return s.runner.CustomRules() }
+
+func (s *RuntimeService) RuleTargets() ([]string, error) { return s.runner.RuleTargets() }
+
+func (s *RuntimeService) SaveCustomRules(rules []profile.CustomRule) (mihomo.State, error) {
+	return s.runner.SaveCustomRules(rules)
+}
+
+func (s *RuntimeService) RuleEditor(id string) (mihomo.RuleEditorSnapshot, error) { return s.runner.RuleEditor(id) }
+
+func (s *RuntimeService) SaveProfileRules(id string, rules []profile.CustomRule) (mihomo.State, error) {
+	return s.runner.SaveProfileRules(id, rules)
+}

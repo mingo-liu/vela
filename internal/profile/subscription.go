@@ -169,6 +169,9 @@ func (s *Subscriptions) List() ([]Subscription, error) {
 }
 
 func (s *Subscriptions) preserveActive(catalog subscriptionCatalog) error {
+	if err := s.profiles.MigrateCustomRules(); err != nil {
+		return err
+	}
 	// Capture legacy content-keyed choices before replacing an active YAML.
 	if s.profiles.Exists() {
 		if _, err := s.profiles.SelectedOptions(); err != nil {
@@ -365,6 +368,9 @@ func (s *Subscriptions) RefreshInactiveDownloaded(id string, download Downloaded
 }
 
 func (s *Subscriptions) Remove(id string) error {
+	if err := s.profiles.MigrateCustomRules(); err != nil {
+		return err
+	}
 	catalog, raw, err := s.catalog()
 	if err != nil {
 		return err

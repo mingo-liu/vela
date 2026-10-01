@@ -57,6 +57,9 @@ func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binar
 	} else {
 		r.state.RoutingMode = mode
 	}
+	if err := store.MigrateCustomRules(); err != nil {
+		r.state.Error = err.Error()
+	}
 	if systemProxy != nil {
 		if err := systemProxy.Recover(); err != nil {
 			r.state.Error = fmt.Sprintf("上次系统代理恢复失败: %v", err)

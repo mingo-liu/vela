@@ -36,6 +36,13 @@ func TestRemoveActiveSubscriptionClearsConfigAndUnsharedCaches(t *testing.T) {
 	if err := store.SelectOption("Choose", "REJECT"); err != nil {
 		t.Fatal(err)
 	}
+	custom := []CustomRule{{ID: "one", Type: "DOMAIN", Domain: "example.com", Target: "DIRECT", Enabled: true}}
+	if err := store.SaveProfileCustomRules(active, custom); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProfileCustomRules(other, custom); err != nil {
+		t.Fatal(err)
+	}
 	if err := writeProfile(filepath.Join(dir, "runtime.yaml"), activeData); err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +58,12 @@ func TestRemoveActiveSubscriptionClearsConfigAndUnsharedCaches(t *testing.T) {
 	}
 	if err := subs.Remove(active); err != nil {
 		t.Fatal(err)
+	}
+	if removed, _ := store.ProfileCustomRules(active); len(removed) != 0 {
+		t.Fatal("removed subscription retained custom rules")
+	}
+	if retained, err := store.ProfileCustomRules(other); err != nil || len(retained) != 1 {
+		t.Fatalf("other subscription rules removed: %v, %v", retained, err)
 	}
 	for _, path := range []string{store.path, filepath.Join(dir, "runtime.yaml"), filepath.Join(dir, "subscriptions", active+".yaml"), filepath.Join(dir, "selections.json"), uniquePath, rulePath} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
@@ -151,12 +164,19 @@ func TestRemoveSubscriptionRollsBackOnCatalogFailure(t *testing.T) {
 	if err := store.SelectOption("Choose", "REJECT"); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SaveProfileCustomRules(id, []CustomRule{{ID: "one", Type: "DOMAIN", Domain: "example.com", Target: "DIRECT", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := writeProfile(filepath.Join(dir, "runtime.yaml"), data); err != nil {
 		t.Fatal(err)
 	}
 	before := urls.value
 	files := map[string]string{}
-	for _, path := range []string{store.path, filepath.Join(dir, "runtime.yaml"), filepath.Join(dir, "subscriptions", id+".yaml"), filepath.Join(dir, "selections.json")} {
+	customPath, err := CustomRulesPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{store.path, filepath.Join(dir, "runtime.yaml"), filepath.Join(dir, "subscriptions", id+".yaml"), filepath.Join(dir, "selections.json"), filepath.Join(dir, customPath)} {
 		contents, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

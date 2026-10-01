@@ -14,6 +14,7 @@ hooks and page views.
 - `features/proxies/`: groups, node selection, delay tests and their cache.
 - `features/profiles/`: subscription management, imports and dialogs.
 - `features/diagnostics/`: connection and rule views.
+- `features/rules/`: subscription-scoped routing rule dialogs, editing drafts and original rule previews.
 - `features/logs/`: log polling, filtering and scroll following.
 - `features/settings/`: application settings, port editing and core information.
 - `lib/`: polling lifecycle, snapshot ordering, visibility and error helpers.
@@ -43,6 +44,7 @@ package keeps one `Runner` with its existing synchronization and transaction rul
 - `delay.go` and `operation.go`: delay probes, progress and cancellation.
 - `diagnostics.go` and `ipinfo.go`: diagnostics and exit IP lookup.
 - `resources.go`: configuration compilation, geodata and private runtime writes.
+- `custom_rules.go`: scoped rule editor snapshots and transactional live reloads. Inactive subscription edits never reload or switch the active configuration.
 - `logs.go`: bounded core output capture.
 
 Splitting files does not change lock ownership. Helpers called while holding a

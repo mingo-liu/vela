@@ -15,9 +15,11 @@ import LogsPage from './features/logs/LogsPage'
 import { useLogs } from './features/logs/useLogs'
 import SettingsPage from './features/settings/SettingsPage'
 import { useSettings } from './features/settings/useSettings'
+import ProfileRulesDialog from './features/rules/ProfileRulesDialog'
 
 export default function App() {
   const [page, setPage] = useState<Page>('home')
+  const [ruleProfile, setRuleProfile] = useState<{ id: string; title: string } | null>(null)
   const visible = useWindowVisible()
   const runtime = useRuntime(visible)
 
@@ -37,11 +39,12 @@ export default function App() {
     <main className="content">
       {page === 'home' && <HomePage runtime={runtime} groups={proxies.groups} language={language} visible={visible} onNavigate={setPage} />}
       {page === 'proxies' && <ProxiesPage runtime={runtime} controller={proxies} language={language} onNavigate={setPage} />}
-      {page === 'profiles' && <ProfilesPage runtime={runtime} controller={profiles} language={language} />}
+      {page === 'profiles' && <ProfilesPage runtime={runtime} controller={profiles} language={language} onEditRules={(id, title) => setRuleProfile({ id, title })} />}
       {page === 'diagnostics' && <DiagnosticsPage visible={visible} connected={runtime.connected && runtime.running} language={language} profileRevision={runtime.profileRevision} />}
       {page === 'logs' && <LogsPage controller={logs} language={language} />}
       {page === 'settings' && <SettingsPage runtime={runtime} controller={settings} />}
     </main>
     {page === 'profiles' && <SubscriptionDialogs controller={profiles} language={language} busy={runtime.controlsBusy} />}
+    {ruleProfile && <ProfileRulesDialog key={ruleProfile.id} id={ruleProfile.id} title={ruleProfile.title} runtime={runtime} language={language} visible={visible} onClose={() => setRuleProfile(null)} />}
   </div>
 }

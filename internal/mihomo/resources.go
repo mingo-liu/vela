@@ -11,11 +11,23 @@ import (
 )
 
 func (r *Runner) compile(raw []byte, apiPort int, tun bool) ([]byte, error) {
+	rules, err := r.store.CustomRules()
+	if err != nil {
+		return nil, err
+	}
+	return r.compileWithCustomRules(raw, apiPort, r.secret, tun, rules)
+}
+
+func (r *Runner) compileWithCustomRules(raw []byte, apiPort int, secret string, tun bool, rules []profile.CustomRule) ([]byte, error) {
 	settings, err := r.store.Settings()
 	if err != nil {
 		return nil, err
 	}
-	return profile.CompileWithLogLevel(raw, r.state.Port, apiPort, r.secret, tun, r.state.RoutingMode, settings.LogLevel)
+	raw, err = profile.ApplyCustomRules(raw, rules)
+	if err != nil {
+		return nil, err
+	}
+	return profile.CompileWithLogLevel(raw, r.state.Port, apiPort, secret, tun, r.state.RoutingMode, settings.LogLevel)
 }
 
 func (r *Runner) ensureGeoIPDatabase(profile []byte) error {

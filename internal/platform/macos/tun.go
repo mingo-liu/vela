@@ -195,6 +195,10 @@ func validateTunConfig(uid int, dataDir, configPath, stopPath string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
+	raw, err = applyTunCustomRules(root, raw)
+	if err != nil {
+		return nil, err
+	}
 	settings := profile.DefaultSettings()
 	settingsData, err := readRootFile(root, "settings.json", 64<<10)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -207,6 +211,36 @@ func validateTunConfig(uid int, dataDir, configPath, stopPath string) ([]byte, e
 	}
 
 	return validateManagedTunConfigWithSettings(data, raw, settings.RoutingMode, settings.LogLevel, settings.MixedPort)
+}
+
+func applyTunCustomRules(root *os.Root, raw []byte) ([]byte, error) {
+	id := ""
+	catalog, err := readRootFile(root, "subscriptions.json", profile.MaxConfigSize)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		id, err = profile.ActiveRuleProfileIDFromCatalog(catalog)
+		if err != nil {
+			return nil, err
+		}
+	}
+	path, err := profile.CustomRulesPath(id)
+	if err != nil {
+		return nil, err
+	}
+	data, err := readRootFile(root, path, profile.MaxCustomRulesSize)
+	if errors.Is(err, os.ErrNotExist) {
+		return raw, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rules, err := profile.DecodeCustomRules(data)
+	if err != nil {
+		return nil, err
+	}
+	return profile.ApplyCustomRules(raw, rules)
 }
 
 func validateManagedTunConfig(data, raw []byte, routingMode string) ([]byte, error) {

@@ -25,6 +25,18 @@ rejected. The helper never deletes user-provided stop paths. The unprivileged
 client watches/removes its stop marker and half-closes the session connection;
 client exit also stops the core.
 
+Custom domain rules live in separate `0600` `subscriptions/<id>.rules.json` files
+(at most 500 entries and 256 KiB per profile); local rules use
+`local-custom-rules.json`. The former global `custom-rules.json` list migrates to
+the currently selected profile, retaining `custom-rules.json.migrated` as a backup.
+The TUN startup validator reads the subscription catalog and only the selected
+profile's rules through the confined file reader. Subscription identifiers cannot
+contain path separators. The validator reproduces the effective profile before
+comparing the managed runtime configuration. Custom rule reloads use the existing restricted,
+validated reload operation. Domain and destination fields cannot inject additional
+rule expressions; unavailable group destinations are omitted from the effective
+profile while retained in the saved rule list.
+
 Existing installations are upgraded through the normal macOS administrator
 prompt the next time TUN is enabled with the new application.
 
