@@ -1,6 +1,7 @@
 package app
 
 import (
+	_ "embed"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +15,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
+
+//go:embed icons/tray.png
+var trayIcon []byte
 
 func Run(assets fs.FS) error {
 	base, err := os.UserConfigDir()
@@ -91,7 +95,8 @@ func Run(assets fs.FS) error {
 		event.Cancel()
 	})
 	tray := wails.SystemTray.New()
-	tray.SetLabel("Vela")
+	tray.SetTemplateIcon(trayIcon)
+	tray.SetTooltip("Vela")
 	menu := wails.NewMenu()
 	updateConnectionMenu := func(state mihomo.State) {
 		systemProxyMenuItem.SetChecked(state.SystemProxyEnabled)
