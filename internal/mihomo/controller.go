@@ -24,12 +24,14 @@ type TrafficTotals struct {
 
 func (r *Runner) TrafficTotals() (TrafficTotals, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.state.Status != "running" {
+		r.mu.Unlock()
 		return TrafficTotals{}, nil
 	}
+	controller := r.controllerReadSnapshot()
+	r.mu.Unlock()
 	var totals TrafficTotals
-	if err := r.request(http.MethodGet, "/connections", nil, &totals); err != nil {
+	if err := r.readController(controller, "/connections", &totals); err != nil {
 		return TrafficTotals{}, err
 	}
 	return totals, nil
@@ -82,21 +84,70 @@ func (r *Runner) request(method, path string, body *strings.Reader, out any) err
 }
 
 func (r *Runner) requestWithClient(client *http.Client, method, path string, body *strings.Reader, out any) error {
+	return (controllerEndpoint{client: client, apiPort: r.apiPort, secret: r.secret}).request(method, path, body, out)
+}
+
+type controllerEndpoint struct {
+	client  *http.Client
+	apiPort int
+	secret  string
+}
+
+type controllerReadSnapshot struct {
+	controllerEndpoint
+	done          <-chan struct{}
+	configVersion uint64
+}
+
+var errControllerChanged = errors.New("内核或配置已切换，请重试")
+
+// controllerReadSnapshot is called with mu held. Each core launch has a unique
+// done channel, so even a restart using the same endpoint invalidates old reads.
+func (r *Runner) controllerReadSnapshot() controllerReadSnapshot {
+	return controllerReadSnapshot{
+		controllerEndpoint: controllerEndpoint{client: r.client, apiPort: r.apiPort, secret: r.secret},
+		done:               r.done,
+		configVersion:      r.state.ConfigVersion,
+	}
+}
+
+func (r *Runner) readController(controller controllerReadSnapshot, path string, out any) error {
+	err := controller.request(http.MethodGet, path, nil, out)
+	return r.validateControllerRead(controller, err)
+}
+
+func (r *Runner) validateControllerRead(controller controllerReadSnapshot, requestErr error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.Status != "running" || r.done != controller.done ||
+		r.apiPort != controller.apiPort || r.secret != controller.secret ||
+		r.state.ConfigVersion != controller.configVersion {
+		return errControllerChanged
+	}
+	select {
+	case <-controller.done:
+		return errControllerChanged
+	default:
+	}
+	return requestErr
+}
+
+func (controller controllerEndpoint) request(method, path string, body *strings.Reader, out any) error {
 	var reader *strings.Reader
 	if body != nil {
 		reader = body
 	} else {
 		reader = strings.NewReader("")
 	}
-	req, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", r.apiPort, path), reader)
+	req, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", controller.apiPort, path), reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.secret)
+	req.Header.Set("Authorization", "Bearer "+controller.secret)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := client.Do(req)
+	resp, err := controller.client.Do(req)
 	if err != nil {
 		return err
 	}

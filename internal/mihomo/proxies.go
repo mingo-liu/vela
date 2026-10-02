@@ -19,8 +19,8 @@ type Group struct {
 
 func (r *Runner) Groups() ([]Group, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.state.Status != "running" {
+		defer r.mu.Unlock()
 		selectors, err := r.store.SelectorGroups()
 		if err != nil {
 			return nil, err
@@ -46,11 +46,21 @@ func (r *Runner) Groups() ([]Group, error) {
 		sortGroups(groups)
 		return groups, nil
 	}
-	return r.controllerGroups()
+	controller := r.controllerReadSnapshot()
+	r.mu.Unlock()
+	groups, err := controller.controllerEndpoint.groups()
+	if err := r.validateControllerRead(controller, err); err != nil {
+		return nil, err
+	}
+	return groups, nil
 }
 
 // controllerGroups is called with the runner mutex held.
 func (r *Runner) controllerGroups() ([]Group, error) {
+	return (controllerEndpoint{client: r.client, apiPort: r.apiPort, secret: r.secret}).groups()
+}
+
+func (controller controllerEndpoint) groups() ([]Group, error) {
 	var response struct {
 		Proxies map[string]struct {
 			Type string   `json:"type"`
@@ -58,7 +68,7 @@ func (r *Runner) controllerGroups() ([]Group, error) {
 			All  []string `json:"all"`
 		} `json:"proxies"`
 	}
-	if err := r.request(http.MethodGet, "/proxies", nil, &response); err != nil {
+	if err := controller.request(http.MethodGet, "/proxies", nil, &response); err != nil {
 		return nil, err
 	}
 	groups := make([]Group, 0)

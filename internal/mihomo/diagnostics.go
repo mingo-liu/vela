@@ -1,9 +1,6 @@
 package mihomo
 
-import (
-	"errors"
-	"net/http"
-)
+import "errors"
 
 type ConnectionMetadata struct {
 	SourceIP        string `json:"sourceIP"`
@@ -43,12 +40,14 @@ type Rule struct {
 
 func (r *Runner) Connections() (ConnectionSnapshot, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.state.Status != "running" {
+		r.mu.Unlock()
 		return ConnectionSnapshot{}, errors.New("请先连接代理以查看连接")
 	}
+	controller := r.controllerReadSnapshot()
+	r.mu.Unlock()
 	var snapshot ConnectionSnapshot
-	if err := r.request(http.MethodGet, "/connections", nil, &snapshot); err != nil {
+	if err := r.readController(controller, "/connections", &snapshot); err != nil {
 		return ConnectionSnapshot{}, err
 	}
 	snapshot.Total = len(snapshot.Connections)
@@ -60,14 +59,16 @@ func (r *Runner) Connections() (ConnectionSnapshot, error) {
 
 func (r *Runner) Rules() ([]Rule, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.state.Status != "running" {
+		r.mu.Unlock()
 		return nil, errors.New("请先连接代理以查看规则")
 	}
+	controller := r.controllerReadSnapshot()
+	r.mu.Unlock()
 	var response struct {
 		Rules []Rule `json:"rules"`
 	}
-	if err := r.request(http.MethodGet, "/rules", nil, &response); err != nil {
+	if err := r.readController(controller, "/rules", &response); err != nil {
 		return nil, err
 	}
 	return response.Rules, nil
