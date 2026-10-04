@@ -75,7 +75,25 @@ type DownloadedSubscription struct {
 }
 
 func (s *Subscriptions) Download(ctx context.Context, address string) (DownloadedSubscription, error) {
-	data, info, err := s.fetch(ctx, address)
+	return s.download(ctx, address, s.client)
+}
+
+// DownloadWithProxy uses the current connection without changing the direct
+// client used when disconnected. Each download owns its proxy connections.
+func (s *Subscriptions) DownloadWithProxy(ctx context.Context, address string, proxyURL *url.URL) (DownloadedSubscription, error) {
+	if proxyURL == nil {
+		return s.Download(ctx, address)
+	}
+	transport := s.client.Transport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxyURL)
+	defer transport.CloseIdleConnections()
+	client := *s.client
+	client.Transport = transport
+	return s.download(ctx, address, &client)
+}
+
+func (s *Subscriptions) download(ctx context.Context, address string, client *http.Client) (DownloadedSubscription, error) {
+	data, info, err := s.fetchWithClient(ctx, address, client)
 	if err != nil {
 		return DownloadedSubscription{}, err
 	}
@@ -643,6 +661,10 @@ func subscriptionInfo(header http.Header) Subscription {
 }
 
 func (s *Subscriptions) fetch(ctx context.Context, address string) ([]byte, Subscription, error) {
+	return s.fetchWithClient(ctx, address, s.client)
+}
+
+func (s *Subscriptions) fetchWithClient(ctx context.Context, address string, client *http.Client) ([]byte, Subscription, error) {
 	if len(address) == 0 || len(address) > 4096 {
 		return nil, Subscription{}, errors.New("订阅地址长度无效")
 	}
@@ -656,7 +678,7 @@ func (s *Subscriptions) fetch(ctx context.Context, address string) ([]byte, Subs
 	}
 	request.Header.Set("Accept", "application/yaml, text/yaml, text/plain, */*")
 	request.Header.Set("User-Agent", "Clash.Meta")
-	response, err := s.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			return nil, Subscription{}, errors.New("订阅下载超时或已取消")

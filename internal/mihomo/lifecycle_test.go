@@ -3,8 +3,8 @@ package mihomo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,7 +27,8 @@ func lifecycleResponse(body string) (*http.Response, error) {
 }
 
 // A real child process exercises cleanup without changing macOS proxy settings
-// or installing a privileged helper. A listener stands in for the mixed port.
+// or installing a privileged helper. The child owns the fake mixed listener,
+// so the port is free before startup and released on cancellation or exit.
 func newLifecycleRunner(t *testing.T) *Runner {
 	t.Helper()
 	dir := t.TempDir()
@@ -38,16 +39,16 @@ func newLifecycleRunner(t *testing.T) *Runner {
 	if err := store.SelectOption("Choose", "REJECT"); err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(dir, "fake-core")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nif [ \"$1\" = \"-t\" ]; then exit 0; fi\nprintf 'startup waiting\\n'\nexec /bin/sleep 60\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	port, err := freePort()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { listener.Close() })
-	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, listener.Addr().(*net.TCPAddr).Port, &testSystemProxy{}, nil)
+	binary := filepath.Join(dir, "fake-core")
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"-t\" ]; then exit 0; fi\nprintf 'startup waiting\\n'\nexec /usr/bin/nc -l -k 127.0.0.1 %d\n", port)
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, &testSystemProxy{}, nil)
 	runner.client.Transport = lifecycleTransport(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/proxies" {
 			return lifecycleResponse(`{"proxies":{"Choose":{"type":"Selector","now":"DIRECT","all":["DIRECT","REJECT"]}}}`)

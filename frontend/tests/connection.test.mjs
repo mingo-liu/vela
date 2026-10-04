@@ -41,37 +41,17 @@ function props(overrides = {}) {
     language: 'en-US', groups: [], visible: true, onNavigate: noop,
     runtime: {
       state: { status: 'starting', hasProfile: true, tunSupported: true, port: 7890, routingMode: 'rule' },
-      controlsBusy: true, operation: null, cancellingConnection: false,
-      setSystemProxy: noop, setTun: noop, setRoutingMode: noop, cancelConnection: noop,
+      controlsBusy: true, operation: null,
+      setSystemProxy: noop, setTun: noop, setRoutingMode: noop,
       ...overrides,
     },
   }
 }
-function findCancel(element) {
-  if (!React.isValidElement(element)) return undefined
-  if (element.type === 'button' && element.props.children === 'Cancel startup') return element
-  return React.Children.toArray(element.props.children).map(findCancel).find(Boolean)
-}
-
-test('startup can be cancelled while connection switches and settings are busy', () => {
-  let cancelled = 0
-  const input = props({ cancelConnection: () => { cancelled++ } })
-  const html = renderToStaticMarkup(React.createElement(HomePage, input))
-  assert.match(html, /aria-label="System proxy"[^>]*disabled=""/)
-  assert.match(html, /aria-label="Tun mode"[^>]*disabled=""/)
-  assert.match(html, /<fieldset[^>]*disabled=""/)
-  const button = findCancel(HomePage(input))
-  assert(button)
-  assert.equal(button.props.disabled, false)
-  button.props.onClick()
-  assert.equal(cancelled, 1)
-})
-
-test('cancelling disables repeat requests and the action disappears after startup', () => {
-  const html = renderToStaticMarkup(React.createElement(HomePage, props({ cancellingConnection: true })))
-  assert.match(html, /disabled="">Cancelling…<\/button>/)
-  const connected = props({ state: { status: 'running', systemProxyEnabled: true, hasProfile: true, port: 7890, routingMode: 'rule' }, connected: true, running: true })
-  assert.doesNotMatch(renderToStaticMarkup(React.createElement(HomePage, connected)), /Cancel startup/)
-  assert.doesNotMatch(renderToStaticMarkup(React.createElement(HomePage, props({ operation: { active: true } }))), /Cancel startup/)
-  assert.match(renderToStaticMarkup(React.createElement(HomePage, { ...props(), language: 'zh-CN' })), /取消启动/)
+test('startup keeps controls busy without displaying a cancel startup button', () => {
+  for (const language of ['en-US', 'zh-CN']) {
+    const html = renderToStaticMarkup(React.createElement(HomePage, { ...props(), language }))
+    assert.match(html, /role="switch"[^>]*disabled=""/)
+    assert.match(html, /<fieldset[^>]*disabled=""/)
+    assert.doesNotMatch(html, /Cancel startup|取消启动|Cancelling…|正在取消…/)
+  }
 })

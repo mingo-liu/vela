@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,16 +13,50 @@ import (
 	"github.com/mingo-liu/vela/internal/profile"
 )
 
+// Explicitly use the local mixed proxy while connected. The direct Go client
+// does not follow macOS system proxy settings and can resolve TUN fake IPs.
+func (r *Runner) downloadSubscription(ctx context.Context, address string) (profile.DownloadedSubscription, error) {
+	state := r.Snapshot()
+	var proxyURL *url.URL
+	if state.Status == "running" && (state.SystemProxyEnabled || state.TunEnabled) {
+		proxyURL = &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", fmt.Sprint(state.Port))}
+	}
+	return r.subs.DownloadWithProxy(ctx, address, proxyURL)
+}
+
 func (r *Runner) Import(data string) (State, error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cmd != nil {
-		return r.state, errors.New("请先停止内核再导入新配置")
+	if r.cmd != nil && r.state.Status != "running" {
+		return r.state, errors.New("内核正在切换状态，请稍后重试")
+	}
+	running := r.cmd != nil
+	var previousProfile, previousConfig []byte
+	var previousSubscriptions []profile.Subscription
+	if running {
+		var err error
+		previousProfile, err = r.store.Load()
+		if err != nil {
+			return r.state, err
+		}
+		previousConfig, err = r.compile(previousProfile, r.apiPort, r.state.TunEnabled)
+		if err != nil {
+			return r.state, err
+		}
+		previousSubscriptions, err = r.subs.List()
+		if err != nil {
+			return r.state, err
+		}
 	}
 	if err := r.subs.ImportLocal(data); err != nil {
 		return r.state, err
+	}
+	if running {
+		if err := r.reloadSelectedProfile(previousProfile, previousConfig, previousSubscriptions); err != nil {
+			return r.state, err
+		}
 	}
 	r.state.HasProfile = true
 	r.state.ConfigVersion++
@@ -37,7 +73,7 @@ func (r *Runner) ImportSubscription(address string) (State, error) {
 		return r.Snapshot(), err
 	}
 	defer r.finishOperation(id)
-	download, err := r.subs.Download(ctx, address)
+	download, err := r.downloadSubscription(ctx, address)
 	if ctx.Err() != nil {
 		err = operationError(ctx.Err())
 	}
@@ -73,7 +109,7 @@ func (r *Runner) UpdateSubscription(id string) (State, error) {
 		return r.Snapshot(), err
 	}
 	defer r.finishOperation(taskID)
-	download, err := r.subs.Download(ctx, address)
+	download, err := r.downloadSubscription(ctx, address)
 	if ctx.Err() != nil {
 		err = operationError(ctx.Err())
 	}
@@ -136,7 +172,7 @@ func (r *Runner) refreshInactiveSubscription(id string) error {
 		return err
 	}
 	defer r.finishOperation(taskID)
-	download, err := r.subs.Download(ctx, address)
+	download, err := r.downloadSubscription(ctx, address)
 	if ctx.Err() != nil {
 		err = operationError(ctx.Err())
 	}
@@ -203,7 +239,7 @@ func (r *Runner) ReplaceSubscriptionURL(id, address string) (State, error) {
 		return r.Snapshot(), err
 	}
 	defer r.finishOperation(taskID)
-	download, err := r.subs.Download(ctx, address)
+	download, err := r.downloadSubscription(ctx, address)
 	if ctx.Err() != nil {
 		err = operationError(ctx.Err())
 	}
@@ -302,7 +338,7 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 			return r.Snapshot(), err
 		}
 		defer r.finishOperation(taskID)
-		fetched, err := r.subs.Download(ctx, address)
+		fetched, err := r.downloadSubscription(ctx, address)
 		if ctx.Err() != nil {
 			err = operationError(ctx.Err())
 		}

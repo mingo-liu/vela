@@ -47,6 +47,16 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 	if err != nil {
 		return r.fail(err)
 	}
+	// mihomo can keep its controller alive after the mixed listener fails.
+	// Check both TCP and UDP before starting, so another proxy is not mistaken
+	// for our listener and port conflicts do not become readiness timeouts.
+	mixedPort := r.state.Port
+	r.mu.Unlock()
+	err = checkMixedPortAvailable(mixedPort)
+	r.mu.Lock()
+	if err != nil || ctx.Err() != nil {
+		return r.failStartup(ctx, err)
+	}
 	if err := os.MkdirAll(r.dataDir, 0700); err != nil {
 		return r.fail(err)
 	}
@@ -200,14 +210,26 @@ func (r *Runner) abortStartup(ctx context.Context, cmd *exec.Cmd, done <-chan st
 	<-done
 	r.mu.Lock()
 	r.cmd, r.tunStopPath = nil, ""
-	detail := strings.TrimSpace(logs.String())
-	if len(detail) > 500 {
-		detail = detail[len(detail)-500:]
-	}
+	detail := startupLogDetail(logs.String())
 	if detail != "" {
 		cause = fmt.Errorf("%w；%s", cause, detail)
 	}
 	return r.failStartup(ctx, fmt.Errorf("内核未就绪: %w", cause))
+}
+
+func startupLogDetail(output string) string {
+	detail := strings.TrimSpace(output)
+	lines := strings.Split(detail, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "level=error") || strings.Contains(lines[i], "level=fatal") {
+			detail = strings.TrimSpace(lines[i])
+			break
+		}
+	}
+	if len(detail) > 500 {
+		detail = detail[len(detail)-500:]
+	}
+	return detail
 }
 
 func (r *Runner) Stop() (State, error) {

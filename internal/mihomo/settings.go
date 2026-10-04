@@ -154,12 +154,16 @@ func checkMixedPortAvailable(port int) error {
 	address := fmt.Sprintf("127.0.0.1:%d", port)
 	tcp, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("本地代理端口 %d 不可用: %w", port, err)
+		return mixedPortUnavailable(port, err)
 	}
 	defer tcp.Close()
 	udp, err := net.ListenPacket("udp", address)
 	if err != nil {
-		return fmt.Errorf("本地代理端口 %d 不可用: %w", port, err)
+		return mixedPortUnavailable(port, err)
 	}
 	return udp.Close()
+}
+
+func mixedPortUnavailable(port int, err error) error {
+	return fmt.Errorf("本地代理端口 %d 不可用: %w；请关闭占用此端口的应用或在设置中更换端口", port, err)
 }

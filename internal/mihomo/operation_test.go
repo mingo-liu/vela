@@ -18,55 +18,66 @@ import (
 )
 
 func TestSubscriptionDownloadKeepsStateResponsiveAndCancelsWithoutWrites(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		close(started)
-		select {
-		case <-request.Context().Done():
-		case <-release:
-		}
-	}))
-	defer server.Close()
-	defer close(release)
-	dir := t.TempDir()
-	store := profile.NewStore(dir)
-	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, "", 7890, nil, nil)
-	result := make(chan error, 1)
-	go func() { _, err := runner.ImportSubscription(server.URL + "?token=private"); result <- err }()
-	select {
-	case <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("download did not start")
-	}
-	responsive := make(chan struct{})
-	go func() { runner.Snapshot(); _, _ = runner.Subscriptions(); close(responsive) }()
-	select {
-	case <-responsive:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("download blocked state or catalog reads")
-	}
-	progress := runner.Operation()
-	if !progress.Active || !progress.Cancellable || progress.Kind != "subscription" || strings.Contains(progress.Target, "private") {
-		t.Fatalf("unexpected progress: %+v", progress)
-	}
-	if runner.CancelOperation(progress.ID + 1) {
-		t.Fatal("stale cancellation accepted")
-	}
-	if !runner.CancelOperation(progress.ID) {
-		t.Fatal("cancellation rejected")
-	}
-	select {
-	case err := <-result:
-		if !errors.Is(err, ErrOperationCancelled) {
-			t.Fatalf("cancel error: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cancel did not stop the download")
-	}
-	items, err := runner.Subscriptions()
-	if err != nil || len(items) != 0 || store.Exists() || runner.Operation().Active {
-		t.Fatalf("cancel changed saved state: %+v, %v", items, err)
+	for _, connected := range []bool{false, true} {
+		t.Run(strconv.FormatBool(connected), func(t *testing.T) {
+			started := make(chan struct{})
+			release := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				close(started)
+				select {
+				case <-request.Context().Done():
+				case <-release:
+				}
+			}))
+			defer server.Close()
+			defer close(release)
+			dir := t.TempDir()
+			store := profile.NewStore(dir)
+			runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, "", 7890, nil, nil)
+			address := server.URL + "?token=private"
+			if connected {
+				proxyURL, _ := url.Parse(server.URL)
+				runner.state.Port, _ = strconv.Atoi(proxyURL.Port())
+				runner.state.Status, runner.state.SystemProxyEnabled = "running", true
+				address = "http://subscription.invalid/config?token=private"
+			}
+			result := make(chan error, 1)
+			go func() { _, err := runner.ImportSubscription(address); result <- err }()
+			select {
+			case <-started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("download did not start")
+			}
+			responsive := make(chan struct{})
+			go func() { runner.Snapshot(); _, _ = runner.Subscriptions(); close(responsive) }()
+			select {
+			case <-responsive:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("download blocked state or catalog reads")
+			}
+			progress := runner.Operation()
+			if !progress.Active || !progress.Cancellable || progress.Kind != "subscription" || strings.Contains(progress.Target, "private") {
+				t.Fatalf("unexpected progress: %+v", progress)
+			}
+			if runner.CancelOperation(progress.ID + 1) {
+				t.Fatal("stale cancellation accepted")
+			}
+			if !runner.CancelOperation(progress.ID) {
+				t.Fatal("cancellation rejected")
+			}
+			select {
+			case err := <-result:
+				if !errors.Is(err, ErrOperationCancelled) {
+					t.Fatalf("cancel error: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("cancel did not stop the download")
+			}
+			items, err := runner.Subscriptions()
+			if err != nil || len(items) != 0 || store.Exists() || runner.Operation().Active {
+				t.Fatalf("cancel changed saved state: %+v, %v", items, err)
+			}
+		})
 	}
 }
 

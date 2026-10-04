@@ -129,3 +129,25 @@ test('every subscription card has a config editor and address editor; local entr
   const local = renderToStaticMarkup(React.createElement(ProfilesPage, { runtime, controller: { ...controller, subscriptions: [] }, language: 'en-US', onEditRules: noop }))
   assert.match(local, />Edit configuration /)
 })
+
+test('local YAML file picker works while connected and stays disabled during an action', () => {
+  const controller = { subscriptions: [], subscriptionURL: '', fileInput: { current: null } }
+  function findPicker(element) {
+    if (!React.isValidElement(element)) return undefined
+    if (element.type === 'button' && element.props.className.includes('file-button')) return element
+    return React.Children.toArray(element.props.children).map(findPicker).find(Boolean)
+  }
+  let opened = 0
+  controller.fileInput.current = { click: () => { opened++ } }
+  for (const tun of [false, true]) {
+    const runtime = { controlsBusy: false, running: true, notice: '', state: { status: 'running', systemProxyEnabled: !tun, tunEnabled: tun, hasProfile: true } }
+    const props = { runtime, controller, language: 'en-US', onEditRules: noop }
+    const picker = findPicker(ProfilesPage(props))
+    assert(picker)
+    assert.equal(picker.props.disabled, false)
+    picker.props.onClick()
+    const busy = findPicker(ProfilesPage({ ...props, runtime: { ...runtime, controlsBusy: true } }))
+    assert.equal(busy.props.disabled, true)
+  }
+  assert.equal(opened, 2)
+})

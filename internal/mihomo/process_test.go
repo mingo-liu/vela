@@ -564,11 +564,8 @@ func TestUpdateSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	if _, err := runner.SelectSubscription(list[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	mixedListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer mixedListener.Close()
+	mixedProxy := httptest.NewServer(subscriptionServer.Config.Handler)
+	defer mixedProxy.Close()
 	var loadedConfig string
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/configs" && r.Method == http.MethodPut {
@@ -596,7 +593,11 @@ func TestUpdateSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner.state.Port = mixedListener.Addr().(*net.TCPAddr).Port
+	mixedURL, _ := url.Parse(mixedProxy.URL)
+	runner.state.Port, err = strconv.Atoi(mixedURL.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner.state.Status = "running"
 	runner.state.SystemProxyEnabled = true
 	runner.cmd = &exec.Cmd{}
@@ -680,13 +681,17 @@ func TestImportSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	systemProxy := &testSystemProxy{}
 	runner := NewRunner(store, subs, dir, binary, port, systemProxy, nil)
 	t.Cleanup(runner.Close)
-	if _, err := runner.Import("proxy-groups:\n  - name: One\n    type: select\n    proxies: [DIRECT, REJECT]\nrules:\n  - MATCH,DIRECT\n"); err != nil {
+	upstream, _ := url.Parse(server.URL)
+	initial := "proxies:\n  - name: SubscriptionProxy\n    type: http\n    server: 127.0.0.1\n    port: " + upstream.Port() + "\nproxy-groups:\n  - name: One\n    type: select\n    proxies: [SubscriptionProxy, DIRECT, REJECT]\nrules:\n  - DOMAIN,subscription.invalid,One\n  - MATCH,DIRECT\n"
+	if _, err := runner.Import(initial); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runner.SetSystemProxy(true); err != nil {
 		t.Fatal(err)
 	}
-	state, err := runner.ImportSubscription(server.URL + "/two")
+	// This domain cannot resolve directly; the real core must route the download
+	// through the HTTP proxy node in the currently selected profile.
+	state, err := runner.ImportSubscription("http://subscription.invalid/two")
 	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
 		t.Fatalf("import while connected: %+v, %v", state, err)
 	}
