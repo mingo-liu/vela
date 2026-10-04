@@ -29,7 +29,7 @@ func (r *Runner) TestGroupDelay(group string) (delays map[string]int, err error)
 			stop := r.cmd == temporary && !r.state.SystemProxyEnabled && !r.state.TunEnabled
 			r.mu.Unlock()
 			if stop {
-				_, stopErr := r.Stop()
+				_, stopErr := r.stop()
 				err = errors.Join(err, stopErr)
 			}
 		}

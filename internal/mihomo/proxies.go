@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -55,12 +56,24 @@ func (r *Runner) Groups() ([]Group, error) {
 	return groups, nil
 }
 
-// controllerGroups is called with the runner mutex held.
+// Controller helpers enter and return with mu held. Callers also hold
+// operationMu, which keeps the session fixed when mu is released for I/O.
 func (r *Runner) controllerGroups() ([]Group, error) {
-	return (controllerEndpoint{client: r.client, apiPort: r.apiPort, secret: r.secret}).groups()
+	return r.controllerGroupsContext(context.Background())
+}
+
+func (r *Runner) controllerGroupsContext(ctx context.Context) ([]Group, error) {
+	controller := controllerEndpoint{client: r.client, apiPort: r.apiPort, secret: r.secret}
+	r.mu.Unlock()
+	defer r.mu.Lock()
+	return controller.groupsContext(ctx)
 }
 
 func (controller controllerEndpoint) groups() ([]Group, error) {
+	return controller.groupsContext(context.Background())
+}
+
+func (controller controllerEndpoint) groupsContext(ctx context.Context) ([]Group, error) {
 	var response struct {
 		Proxies map[string]struct {
 			Type string   `json:"type"`
@@ -68,7 +81,7 @@ func (controller controllerEndpoint) groups() ([]Group, error) {
 			All  []string `json:"all"`
 		} `json:"proxies"`
 	}
-	if err := controller.request(http.MethodGet, "/proxies", nil, &response); err != nil {
+	if err := controller.requestContext(ctx, http.MethodGet, "/proxies", nil, &response); err != nil {
 		return nil, err
 	}
 	groups := make([]Group, 0)
@@ -143,7 +156,11 @@ func (r *Runner) controllerSelection(group, option string) (Group, error) {
 }
 
 func (r *Runner) restoreSelectedOptions() error {
-	groups, err := r.controllerGroups()
+	return r.restoreSelectedOptionsContext(context.Background())
+}
+
+func (r *Runner) restoreSelectedOptionsContext(ctx context.Context) error {
+	groups, err := r.controllerGroupsContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -156,20 +173,27 @@ func (r *Runner) restoreSelectedOptions() error {
 		effective = append(effective, profile.SelectorGroup{Name: group.Name, Options: group.Options})
 		for _, option := range group.Options {
 			if option == selected[group.Name] {
-				if err := r.writeControllerSelection(group.Name, option); err != nil {
+				if err := r.writeControllerSelectionContext(ctx, group.Name, option); err != nil {
 					return err
 				}
 				break
 			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return operationError(err)
+	}
 	return r.store.ReconcileSelectedOptions(effective)
 }
 
 func (r *Runner) writeControllerSelection(group, option string) error {
+	return r.writeControllerSelectionContext(context.Background(), group, option)
+}
+
+func (r *Runner) writeControllerSelectionContext(ctx context.Context, group, option string) error {
 	body, err := json.Marshal(map[string]string{"name": option})
 	if err != nil {
 		return err
 	}
-	return r.request(http.MethodPut, "/proxies/"+url.PathEscape(group), strings.NewReader(string(body)), nil)
+	return r.requestWhileLocked(ctx, r.client, http.MethodPut, "/proxies/"+url.PathEscape(group), strings.NewReader(string(body)), nil)
 }

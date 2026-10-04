@@ -16,16 +16,24 @@ import (
 )
 
 func (r *Runner) Start() (State, error) {
-	return r.start(false)
+	ctx, finish, err := r.beginConnection()
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	defer finish()
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	return r.startWithContext(ctx, false)
 }
 
-func (r *Runner) start(tun bool) (State, error) {
-	return r.startWithContext(context.Background(), tun)
-}
-
+// The caller holds operationMu. Slow work temporarily releases mu; process exit
+// handling uses operationMu too, so it cannot change the session mid-startup.
 func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return r.state, operationError(err)
+	}
 	if r.cmd != nil {
 		return r.state, nil
 	}
@@ -42,12 +50,15 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 	if err := os.MkdirAll(r.dataDir, 0700); err != nil {
 		return r.fail(err)
 	}
-	if err := r.ensureGeoIPDatabase(raw); err != nil {
-		return r.fail(err)
-	}
 	r.state.Status, r.state.Error = "starting", ""
 	r.logs = &tailWriter{}
 	r.emit()
+	r.mu.Unlock()
+	err = r.ensureGeoIPDatabase(raw)
+	r.mu.Lock()
+	if err != nil || ctx.Err() != nil {
+		return r.failStartup(ctx, err)
+	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return r.fail(err)
@@ -67,29 +78,38 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 			return r.fail(err)
 		}
 		configPath := filepath.Join(r.dataDir, "runtime.yaml")
-		if err := writePrivate(configPath, compiled); err != nil {
-			return r.fail(err)
+		r.mu.Unlock()
+		err = writePrivate(configPath, compiled)
+		r.mu.Lock()
+		if err != nil || ctx.Err() != nil {
+			return r.failStartup(ctx, err)
 		}
 		// Starting mihomo parses the same config. For the system proxy we can
 		// wait for readiness before changing macOS settings instead of launching
 		// a second process solely to validate it. Keep the check for Tun so an
 		// invalid config cannot trigger an unnecessary authorization prompt.
 		if tun {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			check := exec.CommandContext(ctx, r.binary, "-t", "-d", r.dataDir, "-f", configPath)
+			checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			check := exec.CommandContext(checkCtx, r.binary, "-t", "-d", r.dataDir, "-f", configPath)
 			check.Env = cleanEnv()
+			check.WaitDelay = time.Second
+			r.mu.Unlock()
 			_, err = check.CombinedOutput()
 			cancel()
-			if err != nil {
-				return r.fail(fmt.Errorf("内核配置校验失败（%v）；请检查节点与规则内容", err))
+			r.mu.Lock()
+			if err != nil || ctx.Err() != nil {
+				return r.failStartup(ctx, fmt.Errorf("内核配置校验失败（%v）；请检查节点与规则内容", err))
 			}
 		}
 		var cmd *exec.Cmd
 		if tun {
 			stopPath := filepath.Join(r.dataDir, fmt.Sprintf("tun-stop-%s", r.secret))
-			cmd, err = r.tunLauncher(configPath, stopPath)
-			if err != nil {
-				return r.fail(fmt.Errorf("Tun 服务启动失败: %w", err))
+			launcher := r.tunLauncher
+			r.mu.Unlock()
+			cmd, err = launcher(ctx, configPath, stopPath)
+			r.mu.Lock()
+			if err != nil || ctx.Err() != nil {
+				return r.failStartup(ctx, fmt.Errorf("Tun 服务启动失败: %w", err))
 			}
 			r.tunStopPath = stopPath
 		} else {
@@ -97,6 +117,7 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 			cmd.Env = cleanEnv()
 		}
 		cmd.Stdout, cmd.Stderr = r.logs, r.logs
+		cmd.WaitDelay = time.Second
 		if err := cmd.Start(); err != nil {
 			r.tunStopPath = ""
 			return r.fail(err)
@@ -105,11 +126,15 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 		go func() {
 			err := cmd.Wait()
 			close(done)
+			r.operationMu.Lock()
+			defer r.operationMu.Unlock()
 			r.mu.Lock()
 			if r.cmd == cmd {
 				var proxyErr error
 				if r.systemProxy != nil {
+					r.mu.Unlock()
 					proxyErr = r.systemProxy.Disable()
+					r.mu.Lock()
 				}
 				r.cmd = nil
 				r.state.SystemProxyEnabled = proxyErr != nil
@@ -133,24 +158,18 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 			readyTimeout = 2 * time.Minute
 		}
 		if err := r.waitReadyContext(ctx, done, readyTimeout); err != nil {
-			if tun {
-				_ = os.WriteFile(r.tunStopPath, nil, 0600)
-			}
-			_ = cmd.Process.Kill()
-			<-done
-			r.cmd = nil
-			r.tunStopPath = ""
-			detail := strings.TrimSpace(r.logs.String())
-			if len(detail) > 500 {
-				detail = detail[len(detail)-500:]
-			}
-			if detail != "" {
-				return r.fail(fmt.Errorf("内核未就绪: %w；%s", err, detail))
-			}
-			return r.fail(fmt.Errorf("内核未就绪: %w", err))
+			return r.abortStartup(ctx, cmd, done, err)
 		}
-		if err := r.restoreSelectedOptions(); err != nil {
+		if err := r.restoreSelectedOptionsContext(ctx); err != nil {
 			_, _ = r.logs.Write([]byte(fmt.Sprintf("level=warning 保存的节点选择恢复失败: %v\n", err)))
+		}
+		if err := ctx.Err(); err != nil {
+			return r.abortStartup(ctx, cmd, done, err)
+		}
+		select {
+		case <-done:
+			return r.abortStartup(ctx, cmd, done, errors.New("进程提前退出"))
+		default:
 		}
 		r.state.Status = "running"
 		r.state.TunEnabled = tun
@@ -160,10 +179,54 @@ func (r *Runner) startWithContext(ctx context.Context, tun bool) (State, error) 
 	return r.fail(errors.New("控制端口无法分配"))
 }
 
+// failStartup and abortStartup are called with mu and operationMu held.
+func (r *Runner) failStartup(ctx context.Context, err error) (State, error) {
+	if ctx.Err() != nil {
+		r.state.Status, r.state.Error = "stopped", ""
+		r.state.TunEnabled = false
+		r.emit()
+		return r.state, operationError(ctx.Err())
+	}
+	return r.fail(err)
+}
+
+func (r *Runner) abortStartup(ctx context.Context, cmd *exec.Cmd, done <-chan struct{}, cause error) (State, error) {
+	stopPath, logs := r.tunStopPath, r.logs
+	r.mu.Unlock()
+	if stopPath != "" {
+		_ = os.WriteFile(stopPath, nil, 0600)
+	}
+	_ = cmd.Process.Kill()
+	<-done
+	r.mu.Lock()
+	r.cmd, r.tunStopPath = nil, ""
+	detail := strings.TrimSpace(logs.String())
+	if len(detail) > 500 {
+		detail = detail[len(detail)-500:]
+	}
+	if detail != "" {
+		cause = fmt.Errorf("%w；%s", cause, detail)
+	}
+	return r.failStartup(ctx, fmt.Errorf("内核未就绪: %w", cause))
+}
+
 func (r *Runner) Stop() (State, error) {
+	r.cancelConnection()
+	r.CancelOperation(0)
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	return r.stop()
+}
+
+// stop is called with operationMu held. It must not cancel its caller's context:
+// connection changes use it before starting the replacement core.
+func (r *Runner) stop() (State, error) {
 	r.mu.Lock()
 	if r.systemProxy != nil {
-		if err := r.systemProxy.Disable(); err != nil {
+		r.mu.Unlock()
+		err := r.systemProxy.Disable()
+		r.mu.Lock()
+		if err != nil {
 			r.state.Error = fmt.Sprintf("系统代理恢复失败，内核仍在运行: %v", err)
 			s := r.state
 			r.mu.Unlock()
@@ -232,14 +295,35 @@ func (r *Runner) waitReadyUntil(done <-chan struct{}, timeout time.Duration) err
 	return r.waitReadyContext(context.Background(), done, timeout)
 }
 
+// The caller holds mu and operationMu. Session identity stays fixed while mu is
+// released for probes, and mu is held again on return.
 func (r *Runner) waitReadyContext(ctx context.Context, done <-chan struct{}, timeout time.Duration) error {
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
+	controller := controllerEndpoint{client: r.client, apiPort: r.apiPort, secret: r.secret}
+	mixedPort := r.state.Port
+	r.mu.Unlock()
+	defer r.mu.Lock()
+	return controller.waitReady(ctx, done, mixedPort, timeout)
+}
+
+func (controller controllerEndpoint) waitReady(parent context.Context, done <-chan struct{}, mixedPort int, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	// Process exit interrupts an in-flight HTTP request or TCP dial too.
+	watchDone := make(chan struct{})
+	defer close(watchDone)
+	go func() {
+		select {
+		case <-done:
+			cancel()
+		case <-watchDone:
+		}
+	}()
 	tick := time.NewTicker(150 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if r.request(http.MethodGet, "/version", nil, nil) == nil {
-			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", r.state.Port), time.Second)
+		if controller.requestContext(ctx, http.MethodGet, "/version", nil, nil) == nil {
+			dialer := net.Dialer{Timeout: time.Second}
+			conn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", mixedPort))
 			if err == nil {
 				conn.Close()
 				return nil
@@ -249,8 +333,14 @@ func (r *Runner) waitReadyContext(ctx context.Context, done <-chan struct{}, tim
 		case <-done:
 			return errors.New("进程提前退出")
 		case <-ctx.Done():
-			return operationError(ctx.Err())
-		case <-deadline.C:
+			if parent.Err() != nil {
+				return operationError(parent.Err())
+			}
+			select {
+			case <-done:
+				return errors.New("进程提前退出")
+			default:
+			}
 			return errors.New("等待控制接口与代理端口超时")
 		case <-tick.C:
 		}

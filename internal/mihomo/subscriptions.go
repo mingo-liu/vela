@@ -171,7 +171,7 @@ func (r *Runner) RemoveSubscription(id string) error {
 		return profile.ErrNoSubscription
 	}
 	if active {
-		if _, err := r.Stop(); err != nil {
+		if _, err := r.stop(); err != nil {
 			r.mu.Lock()
 			r.emit()
 			r.mu.Unlock()
@@ -363,6 +363,9 @@ func (r *Runner) SelectSubscription(id string) (State, error) {
 // reloadSelectedProfile keeps the current process and connection mode in place.
 // If reloading fails, both the saved selection and the running config are restored.
 func (r *Runner) reloadSelectedProfile(previousProfile, previousConfig []byte, previousSubscriptions []profile.Subscription) error {
+	r.configChanging = true
+	r.controllerRevision++
+	defer func() { r.configChanging = false }()
 	rollback := func(cause error, reload bool) error {
 		var restoreErr error
 		activeID := ""

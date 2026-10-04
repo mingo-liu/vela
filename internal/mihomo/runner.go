@@ -24,29 +24,33 @@ type State struct {
 }
 
 type Runner struct {
-	operationMu     sync.Mutex
-	taskMu          sync.Mutex
-	closed          bool
-	taskProgress    OperationProgress
-	taskCancel      context.CancelFunc
-	onProgress      func(OperationProgress)
-	mu              sync.Mutex
-	store           *profile.Store
-	subs            *profile.Subscriptions
-	dataDir         string
-	binary          string
-	state           State
-	cmd             *exec.Cmd
-	done            chan struct{}
-	apiPort         int
-	secret          string
-	client          *http.Client
-	logs            *tailWriter
-	onChange        func(State)
-	systemProxy     SystemProxy
-	tunLauncher     func(configPath, stopPath string) (*exec.Cmd, error)
-	tunStopPath     string
-	proxyGeneration uint64
+	operationMu        sync.Mutex
+	taskMu             sync.Mutex
+	closed             bool
+	taskProgress       OperationProgress
+	taskCancel         context.CancelFunc
+	onProgress         func(OperationProgress)
+	connectionID       uint64
+	connectionCancel   context.CancelFunc
+	mu                 sync.Mutex
+	store              *profile.Store
+	subs               *profile.Subscriptions
+	dataDir            string
+	binary             string
+	state              State
+	cmd                *exec.Cmd
+	done               chan struct{}
+	apiPort            int
+	secret             string
+	client             *http.Client
+	logs               *tailWriter
+	onChange           func(State)
+	systemProxy        SystemProxy
+	tunLauncher        func(context.Context, string, string) (*exec.Cmd, error)
+	tunStopPath        string
+	proxyGeneration    uint64
+	controllerRevision uint64
+	configChanging     bool
 }
 
 func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binary string, port int, systemProxy SystemProxy, onChange func(State)) *Runner {
@@ -68,7 +72,7 @@ func NewRunner(store *profile.Store, subs *profile.Subscriptions, dataDir, binar
 	return r
 }
 
-func (r *Runner) SetTunLauncher(launcher func(configPath, stopPath string) (*exec.Cmd, error)) {
+func (r *Runner) SetTunLauncher(launcher func(context.Context, string, string) (*exec.Cmd, error)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tunLauncher = launcher
@@ -86,11 +90,47 @@ func (r *Runner) Snapshot() State {
 func (r *Runner) Close() {
 	r.taskMu.Lock()
 	r.closed = true
+	if r.connectionCancel != nil {
+		r.connectionCancel()
+	}
 	r.taskMu.Unlock()
 	r.CancelOperation(0)
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
-	_, _ = r.Stop()
+	_, _ = r.stop()
+}
+
+// Register before acquiring operationMu so disconnect and shutdown also cancel
+// queued connection changes. taskMu is never held while waiting for operationMu.
+func (r *Runner) beginConnection() (context.Context, func(), error) {
+	r.taskMu.Lock()
+	defer r.taskMu.Unlock()
+	if r.closed {
+		return nil, nil, ErrRunnerClosed
+	}
+	if r.connectionCancel != nil {
+		r.connectionCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	r.connectionID++
+	id := r.connectionID
+	r.connectionCancel = cancel
+	return ctx, func() {
+		cancel()
+		r.taskMu.Lock()
+		if r.connectionID == id {
+			r.connectionCancel = nil
+		}
+		r.taskMu.Unlock()
+	}, nil
+}
+
+func (r *Runner) cancelConnection() {
+	r.taskMu.Lock()
+	defer r.taskMu.Unlock()
+	if r.connectionCancel != nil {
+		r.connectionCancel()
+	}
 }
 
 func (r *Runner) fail(err error) (State, error) {

@@ -58,8 +58,16 @@ func (r *Runner) SetMixedPort(port int) (State, error) {
 	if !profile.ValidMixedPort(port) {
 		return r.Snapshot(), errors.New("本地代理端口必须在 1024–65535 之间")
 	}
+	ctx, finish, err := r.beginConnection()
+	if err != nil {
+		return r.Snapshot(), err
+	}
+	defer finish()
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return r.Snapshot(), operationError(err)
+	}
 	r.mu.Lock()
 	if r.cmd != nil && r.state.Status != "running" {
 		state := r.state
@@ -88,15 +96,15 @@ func (r *Runner) SetMixedPort(port int) (State, error) {
 	}
 	restart := func() (State, error) {
 		if previousMode != "off" {
-			return r.activate(previousMode)
+			return r.activate(ctx, previousMode)
 		}
 		if wasRunning {
-			return r.Start()
+			return r.startWithContext(ctx, false)
 		}
 		return r.Snapshot(), nil
 	}
 	if needsRestart {
-		if _, err := r.Stop(); err != nil {
+		if _, err := r.stop(); err != nil {
 			return r.Snapshot(), err
 		}
 	}
@@ -112,7 +120,7 @@ func (r *Runner) SetMixedPort(port int) (State, error) {
 		return r.Snapshot(), nil
 	}
 	if _, err := restart(); err != nil {
-		if _, stopErr := r.Stop(); stopErr != nil {
+		if _, stopErr := r.stop(); stopErr != nil {
 			return r.Snapshot(), errors.Join(err, fmt.Errorf("停止新端口连接失败: %w", stopErr))
 		}
 		if _, saveErr := r.store.UpdateSettings(func(settings *profile.Settings) error {
@@ -122,6 +130,9 @@ func (r *Runner) SetMixedPort(port int) (State, error) {
 			return r.Snapshot(), errors.Join(err, fmt.Errorf("恢复原端口设置失败: %w", saveErr))
 		}
 		r.setMixedPortState(previousPort)
+		if ctx.Err() != nil {
+			return r.Snapshot(), operationError(ctx.Err())
+		}
 		_, restoreErr := restart()
 		return r.Snapshot(), errors.Join(fmt.Errorf("切换本地代理端口失败: %w", err), restoreErr)
 	}

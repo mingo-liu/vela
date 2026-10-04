@@ -50,6 +50,7 @@ const english: Record<string, string> = {
   '保存后立即应用于新连接；已有连接可能继续使用原路径。': 'Saved rules apply immediately to new connections. Existing connections may keep their previous route.',
   '保存后将在下次连接时生效。': 'Saved rules will apply when you next connect.',
   '正在取消…': 'Cancelling…',
+  '取消启动': 'Cancel startup',
   '正在应用配置…': 'Applying configuration…',
   '正在获取更新…': 'Fetching updates…',
   '首页': 'Home',

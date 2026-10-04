@@ -119,12 +119,14 @@ func Run(assets fs.FS) error {
 	menu.AddSeparator()
 	systemProxyMenuItem = menu.AddCheckbox(translateMenu(language, "系统代理", "System Proxy"), false)
 	systemProxyMenuItem.OnClick(func(_ *application.Context) {
-		state, _ := runner.SetSystemProxy(!runner.Snapshot().SystemProxyEnabled)
+		current := runner.Snapshot()
+		state, _ := runner.SetSystemProxy(current.Status != "starting" && !current.SystemProxyEnabled)
 		updateConnectionMenu(state)
 	})
 	tunMenuItem = menu.AddCheckbox(translateMenu(language, "Tun 模式", "Tun Mode"), false)
 	tunMenuItem.OnClick(func(_ *application.Context) {
-		state, _ := runner.SetTun(!runner.Snapshot().TunEnabled)
+		current := runner.Snapshot()
+		state, _ := runner.SetTun(current.Status != "starting" && !current.TunEnabled)
 		updateConnectionMenu(state)
 	})
 	menu.AddSeparator()

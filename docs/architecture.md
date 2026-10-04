@@ -47,6 +47,25 @@ package keeps one `Runner` with its existing synchronization and transaction rul
 - `custom_rules.go`: scoped rule editor snapshots and transactional live reloads. Inactive subscription edits never reload or switch the active configuration.
 - `logs.go`: bounded core output capture.
 
-Splitting files does not change lock ownership. Helpers called while holding a
-Runner lock and observer callbacks still follow their documented restrictions.
-Subscription updates retain their saved-profile and running-config rollback paths.
+`operationMu` serializes connection changes, profile transactions and process-exit
+cleanup. Public `Start` and `Stop` acquire it; code already holding it calls
+`startWithContext` and `stop`. `mu` protects state and session handles. Startup
+checks, TUN authorization, readiness probes, controller writes and node-selection
+restoration release `mu` during waits and reacquire it before committing state.
+Helpers such as `requestWhileLocked`, `controllerGroupsContext` and
+`waitReadyContext` enter and return with `mu` held. Observer callbacks must still
+return without calling Runner.
+
+Connection changes register their cancellation context under `taskMu` before
+waiting for `operationMu`. A newer connection request cancels the previous one;
+disconnect and shutdown can therefore interrupt both queued and active startup.
+Cancelled starts reap their child process and skip restoring the old connection.
+Ordinary startup failures retain the existing rollback behavior. TUN sessions use
+a normal child process after startup so releasing the startup context does not
+terminate a successful connection.
+
+Subscription and rule reloads keep their saved-profile and running-config rollback
+paths. They mark the controller as changing while state reads and logs remain
+available. Controller reads reject intermediate results and results begun before
+a reload, including failed reloads that roll back without changing `configVersion`.
+Transactional apply remains non-cancellable.

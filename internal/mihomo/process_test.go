@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -363,7 +364,7 @@ func TestTunStartFailureRestoresSystemProxy(t *testing.T) {
 	}
 	proxy := &testSystemProxy{}
 	runner := NewRunner(store, profile.NewSubscriptions(store, &testURLStore{}), dir, binary, port, proxy, nil)
-	runner.SetTunLauncher(func(_, _ string) (*exec.Cmd, error) { return exec.Command("false"), nil })
+	runner.SetTunLauncher(func(_ context.Context, _, _ string) (*exec.Cmd, error) { return exec.Command("false"), nil })
 	t.Cleanup(runner.Close)
 	if _, err := runner.SetSystemProxy(true); err != nil {
 		t.Fatal(err)

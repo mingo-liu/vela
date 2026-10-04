@@ -28,6 +28,7 @@ Vela is a macOS proxy client built with Wails v3, React, and mihomo. It provides
 - View task progress and cancel subscription downloads or latency tests; disconnect without waiting for probes.
 - Switch between Rule, Global, and Direct routing modes.
 - Connect through the system proxy or Tun mode. These modes are mutually exclusive.
+- Read state and logs during connection startup, cancel startup, and cancel pending startup when quitting the app.
 - Configure startup behavior, local proxy port, log level, and interface language. Closing the window keeps Vela in the menu bar; quitting stops the core.
 - Inspect active connections, proxy traffic, proxy chains, and loaded rules in Diagnostics.
 - Use Edit configuration on a subscription card to inspect original rules and add exact-domain or domain-suffix rules for Direct, Block, or an existing proxy group. Edit, reorder, enable, and delete custom rules independently for each subscription. Rules take priority and survive updates; switching subscriptions applies their own rules in Rule mode. Editing an inactive subscription does not switch the current profile. Missing group destinations remain saved but inactive. The active local profile also has a rule editor.

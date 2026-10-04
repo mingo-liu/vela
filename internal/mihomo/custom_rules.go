@@ -174,6 +174,9 @@ func (r *Runner) saveProfileRules(id string, current bool, rules []profile.Custo
 		return r.state, nil
 	}
 	if r.cmd != nil {
+		r.configChanging = true
+		r.controllerRevision++
+		defer func() { r.configChanging = false }()
 		path := filepath.Join(r.dataDir, "runtime.yaml")
 		reload := false
 		err = writePrivate(path, compiled)

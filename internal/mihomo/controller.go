@@ -67,7 +67,7 @@ func (r *Runner) reloadConfig(compiled []byte) error {
 		return err
 	}
 	client := &http.Client{Timeout: 15 * time.Second, Transport: r.client.Transport}
-	return r.requestWithClient(client, http.MethodPut, "/configs?force=true", strings.NewReader(string(body)), nil)
+	return r.requestWhileLocked(context.Background(), client, http.MethodPut, "/configs?force=true", strings.NewReader(string(body)), nil)
 }
 
 // patchRoutingMode changes only routing. Connection mode and managed listeners stay active.
@@ -76,7 +76,7 @@ func (r *Runner) patchRoutingMode(mode string) error {
 	if err != nil {
 		return err
 	}
-	return r.request(http.MethodPatch, "/configs", strings.NewReader(string(body)), nil)
+	return r.requestWhileLocked(context.Background(), r.client, http.MethodPatch, "/configs", strings.NewReader(string(body)), nil)
 }
 
 func (r *Runner) request(method, path string, body *strings.Reader, out any) error {
@@ -85,6 +85,15 @@ func (r *Runner) request(method, path string, body *strings.Reader, out any) err
 
 func (r *Runner) requestWithClient(client *http.Client, method, path string, body *strings.Reader, out any) error {
 	return (controllerEndpoint{client: client, apiPort: r.apiPort, secret: r.secret}).request(method, path, body, out)
+}
+
+// Mutating controller requests are serialized by operationMu. Callers hold mu;
+// release it for network I/O and restore it before returning to the transaction.
+func (r *Runner) requestWhileLocked(ctx context.Context, client *http.Client, method, path string, body *strings.Reader, out any) error {
+	controller := controllerEndpoint{client: client, apiPort: r.apiPort, secret: r.secret}
+	r.mu.Unlock()
+	defer r.mu.Lock()
+	return controller.requestContext(ctx, method, path, body, out)
 }
 
 type controllerEndpoint struct {
@@ -97,6 +106,8 @@ type controllerReadSnapshot struct {
 	controllerEndpoint
 	done          <-chan struct{}
 	configVersion uint64
+	revision      uint64
+	changing      bool
 }
 
 var errControllerChanged = errors.New("内核或配置已切换，请重试")
@@ -108,6 +119,8 @@ func (r *Runner) controllerReadSnapshot() controllerReadSnapshot {
 		controllerEndpoint: controllerEndpoint{client: r.client, apiPort: r.apiPort, secret: r.secret},
 		done:               r.done,
 		configVersion:      r.state.ConfigVersion,
+		revision:           r.controllerRevision,
+		changing:           r.configChanging,
 	}
 }
 
@@ -121,7 +134,8 @@ func (r *Runner) validateControllerRead(controller controllerReadSnapshot, reque
 	defer r.mu.Unlock()
 	if r.state.Status != "running" || r.done != controller.done ||
 		r.apiPort != controller.apiPort || r.secret != controller.secret ||
-		r.state.ConfigVersion != controller.configVersion {
+		r.state.ConfigVersion != controller.configVersion || r.configChanging || controller.changing ||
+		r.controllerRevision != controller.revision {
 		return errControllerChanged
 	}
 	select {
@@ -133,13 +147,17 @@ func (r *Runner) validateControllerRead(controller controllerReadSnapshot, reque
 }
 
 func (controller controllerEndpoint) request(method, path string, body *strings.Reader, out any) error {
+	return controller.requestContext(context.Background(), method, path, body, out)
+}
+
+func (controller controllerEndpoint) requestContext(ctx context.Context, method, path string, body *strings.Reader, out any) error {
 	var reader *strings.Reader
 	if body != nil {
 		reader = body
 	} else {
 		reader = strings.NewReader("")
 	}
-	req, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", controller.apiPort, path), reader)
+	req, err := http.NewRequestWithContext(ctx, method, fmt.Sprintf("http://127.0.0.1:%d%s", controller.apiPort, path), reader)
 	if err != nil {
 		return err
 	}

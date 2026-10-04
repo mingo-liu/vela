@@ -4,6 +4,7 @@ package macos
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/mingo-liu/vela/internal/profile"
 	"go.yaml.in/yaml/v3"
@@ -28,8 +30,8 @@ const tunServiceID = "local.vela.desktop.tun"
 const tunServicePlist = "/Library/LaunchDaemons/" + tunServiceID + ".plist"
 
 // NewTunLauncher installs the standalone service and approved core when they change.
-func NewTunLauncher(binary, dataDir string, language func() string) func(configPath, stopPath string) (*exec.Cmd, error) {
-	return func(configPath, stopPath string) (*exec.Cmd, error) {
+func NewTunLauncher(binary, dataDir string, language func() string) func(context.Context, string, string) (*exec.Cmd, error) {
+	return func(ctx context.Context, configPath, stopPath string) (*exec.Cmd, error) {
 		self, err := os.Executable()
 		if err != nil {
 			return nil, err
@@ -46,7 +48,7 @@ func NewTunLauncher(binary, dataDir string, language func() string) func(configP
 		if err != nil {
 			return nil, err
 		}
-		if err := ensureTunService(service, absBinary, language()); err != nil {
+		if err := ensureTunService(ctx, service, absBinary, language()); err != nil {
 			return nil, err
 		}
 		return exec.Command(self, "--vela-tun-client", dataDir, configPath, stopPath), nil
@@ -94,7 +96,10 @@ func installedCopyMatches(source, target string) bool {
 	return info.Mode()&os.ModeSetuid == 0
 }
 
-func ensureTunService(service, binary, language string) error {
+func ensureTunService(ctx context.Context, service, binary, language string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	helper := filepath.Join(tunInstallDir, "service")
 	core := filepath.Join(tunInstallDir, "mihomo")
 	ownerFile := filepath.Join(tunInstallDir, "owner-uid")
@@ -159,7 +164,9 @@ func ensureTunService(service, binary, language string) error {
 		prompt = "Vela Tun needs to install a system service"
 	}
 	script := "do shell script " + strconv.Quote(command) + " with administrator privileges with prompt " + strconv.Quote(prompt)
-	output, err := exec.Command("/usr/bin/osascript", "-e", script).CombinedOutput()
+	install := exec.CommandContext(ctx, "/usr/bin/osascript", "-e", script)
+	install.WaitDelay = time.Second
+	output, err := install.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("安装 Tun 辅助程序失败: %w；%s", err, strings.TrimSpace(string(output)))
 	}

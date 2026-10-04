@@ -19,7 +19,8 @@ export function useRuntime(visible: boolean) {
   const finishAction = () => { pendingActions.current--; setBusy(pendingActions.current > 0) }
   const [operation, setOperation] = useState<OperationProgress | null>(null)
   const [operationReceiver] = useState(() => createSnapshotReceiver<OperationProgress>(setOperation))
-  const controlsBusy = busy || operation?.active === true
+  const [cancellingConnection, setCancellingConnection] = useState(false)
+  const controlsBusy = busy || operation?.active === true || state.status === 'starting' || state.status === 'stopping'
   const [notice, setNotice] = useState('')
 
   useEffect(() => Events.On('operation-progress', event => operationReceiver.receive(event.data as OperationProgress)), [operationReceiver])
@@ -41,7 +42,8 @@ export function useRuntime(visible: boolean) {
       stateReceiver.receive(await action())
       return true
     } catch (error) {
-      onError(message(error))
+      const errorText = message(error)
+      if (errorText) onError(errorText)
       await stateReceiver.refresh(Runtime.State, () => true).catch(() => {})
       return false
     } finally {
@@ -51,8 +53,14 @@ export function useRuntime(visible: boolean) {
 
   const refreshState = () => stateReceiver.refresh(Runtime.State, () => true).catch(() => {})
 
+  const cancelConnection = async () => {
+    setCancellingConnection(true)
+    try { await execute(() => Runtime.SetSystemProxy(false)) }
+    finally { setCancellingConnection(false) }
+  }
+
   return {
-    state, operation, controlsBusy, notice, setNotice,
+    state, operation, controlsBusy, notice, setNotice, cancellingConnection, cancelConnection,
     running: state.status === 'running',
     connected: state.systemProxyEnabled || state.tunEnabled,
     profileRevision: state.configVersion,
