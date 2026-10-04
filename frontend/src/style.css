@@ -302,6 +302,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .diagnostics-row strong { color: #24272d; }
 .diagnostics-row small { color: #7a7d84; }
 .diagnostics-rule { grid-template-columns: 45px minmax(90px, .5fr) minmax(160px, 1.5fr) minmax(100px, 1fr); }
+.diagnostics-rule-list { overflow-anchor: none; }
+.diagnostics-rule-list:focus-visible { outline: 3px solid #ff4965; outline-offset: -3px; }
+.diagnostics-rule-space { position: relative; }
+.diagnostics-rule-space > .diagnostics-rule { position: absolute; top: 0; left: 0; width: 100%; border-bottom: 1px solid #f0f1f3; }
+.diagnostics-rule-space > .diagnostics-rule[data-last] { border-bottom: 0; }
 .diagnostics-index { color: #7a7d84; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 780px) {

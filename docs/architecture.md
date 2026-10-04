@@ -29,6 +29,21 @@ state and invoke feature commands. `useRuntime` coordinates command responses,
 runtime events, fallback reads, notices and the shared busy state. Features use
 the same action accounting so concurrent operations cannot clear busy state early.
 
+The diagnostics rule list uses TanStack Virtual to render visible rows plus a
+small buffer. Rows retain their original rule numbers and wrap at their actual
+height; refreshing data or changing the list width invalidates measured heights.
+Search filters the full rule array and resets the scroll position. The list can
+be focused and scrolled with arrow keys, Page Up/Down and Home/End.
+
+Browser regressions build the production diagnostics component with an in-memory
+runtime fixture, then check search, keyboard navigation, bounded DOM size, refresh
+and resizing in WebKit and Chromium:
+
+```sh
+npm --prefix frontend exec -- playwright install chromium webkit
+npm --prefix frontend run test:diagnostics
+```
+
 ## Backend
 
 `internal/desktop/RuntimeService` remains the Wails boundary. The `internal/mihomo`

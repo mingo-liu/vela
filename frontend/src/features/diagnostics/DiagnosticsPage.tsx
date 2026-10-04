@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowClockwise } from '@phosphor-icons/react'
 import * as Runtime from '../../../bindings/github.com/mingo-liu/vela/internal/desktop/runtimeservice'
 import type { ConnectionSnapshot, Rule } from '../../../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
 import { localizeError, translate, type Language } from '../../i18n'
 import { usePolling } from '../../lib/usePolling'
+import RuleList from './RuleList'
 
 function bytes(value: number): string {
   if (value < 1024) return `${value} B`
@@ -45,7 +46,7 @@ export default function Diagnostics({ connected, language, profileRevision, visi
     const metadata = item.metadata
     return !query || [metadata.host, metadata.destinationIP, metadata.process, metadata.processPath, item.rule, item.rulePayload, ...(item.chains ?? [])].some(value => value?.toLowerCase().includes(query))
   })
-  const visibleRules = rules.filter(item => !query || [item.type, item.payload, item.proxy].some(value => value.toLowerCase().includes(query)))
+  const visibleRules = useMemo(() => query ? rules.filter(item => [item.type, item.payload, item.proxy].some(value => value.toLowerCase().includes(query))) : rules, [rules, query])
 
   return <>
       <div className="page-heading"><h1>{t('诊断')}</h1></div>
@@ -69,7 +70,7 @@ export default function Diagnostics({ connected, language, profileRevision, visi
             </article>)}</div>}
           </> : <>
             <div className="diagnostics-summary"><span>{t('规则总数')}：<strong>{rules.length}</strong></span></div>
-            {visibleRules.length === 0 ? <div className="empty-state"><h3>{t('暂无匹配的规则')}</h3></div> : <div className="diagnostics-list">{visibleRules.map(item => <div className="diagnostics-row diagnostics-rule" key={item.index}><span className="diagnostics-index">{item.index + 1}</span><strong>{item.type}</strong><span title={item.payload}>{item.payload || '—'}</span><span>{item.proxy}</span></div>)}</div>}
+            {visibleRules.length === 0 ? <div className="empty-state"><h3>{t('暂无匹配的规则')}</h3></div> : <RuleList key={`${profileRevision}:${query}`} rules={visibleRules} label={t('规则列表')} />}
           </>}
         </>}
       </section>
