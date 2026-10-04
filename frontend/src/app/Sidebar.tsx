@@ -1,4 +1,4 @@
-import { GearSix, GlobeHemisphereWest, House, ListBullets, Stack } from '@phosphor-icons/react'
+import { FileText, GearSix, GlobeHemisphereWest, House, Pulse, Stack } from '@phosphor-icons/react'
 import velaIcon from '../../../build/appicon.png'
 import { translate, type Language } from '../i18n'
 import type { Page } from './types'
@@ -8,8 +8,8 @@ const navigation = [
   { id: 'home', label: '首页', icon: House },
   { id: 'proxies', label: '代理', icon: GlobeHemisphereWest },
   { id: 'profiles', label: '配置', icon: Stack },
-  { id: 'diagnostics', label: '诊断', icon: ListBullets },
-  { id: 'logs', label: '日志', icon: ListBullets },
+  { id: 'diagnostics', label: '诊断', icon: Pulse },
+  { id: 'logs', label: '日志', icon: FileText },
   { id: 'settings', label: '设置', icon: GearSix },
 ] as const
 
