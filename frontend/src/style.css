@@ -1,10 +1,10 @@
 * { box-sizing: border-box; }
 :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #171a20; background: #fff; font-synthesis: none; }
-html, .sidebar { scrollbar-color: #bec4cd transparent; }
-html::-webkit-scrollbar, .sidebar::-webkit-scrollbar { width: 12px; height: 12px; }
-html::-webkit-scrollbar-track, .sidebar::-webkit-scrollbar-track { background: transparent; }
-html::-webkit-scrollbar-thumb, .sidebar::-webkit-scrollbar-thumb { background: #bec4cd; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
-html::-webkit-scrollbar-thumb:hover, .sidebar::-webkit-scrollbar-thumb:hover { background-color: #abb3bf; }
+html { scrollbar-color: #bec4cd transparent; }
+html::-webkit-scrollbar { width: 12px; height: 12px; }
+html::-webkit-scrollbar-track { background: transparent; }
+html::-webkit-scrollbar-thumb { background: #bec4cd; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+html::-webkit-scrollbar-thumb:hover { background-color: #abb3bf; }
 body { margin: 0; min-width: 600px; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
@@ -12,7 +12,8 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #ff4965; outline-offset: 3px; }
 
 .app-layout { display: flex; min-height: 100vh; }
-.sidebar { position: sticky; top: 0; width: clamp(225px, 27vw, 500px); height: 100vh; flex: 0 0 clamp(225px, 27vw, 500px); display: flex; flex-direction: column; padding: 28px 15px 22px; overflow-y: auto; background: #f5f6f8; border-right: 1px solid #eaebee; }
+.sidebar { position: sticky; top: 0; width: clamp(225px, 27vw, 500px); height: 100vh; flex: 0 0 clamp(225px, 27vw, 500px); display: flex; flex-direction: column; padding: 28px 15px 22px; overflow-y: auto; scrollbar-width: none; background: #f5f6f8; border-right: 1px solid #eaebee; }
+.sidebar::-webkit-scrollbar { display: none; }
 .brand { display: flex; align-items: center; gap: 13px; padding: 3px 14px 32px; }
 .brand-icon { display: block; width: 42px; height: 42px; flex: none; }
 .brand strong { display: block; font-size: 23px; letter-spacing: -.045em; }
