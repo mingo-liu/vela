@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -681,7 +682,44 @@ func TestImportSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	systemProxy := &testSystemProxy{}
 	runner := NewRunner(store, subs, dir, binary, port, systemProxy, nil)
 	t.Cleanup(runner.Close)
-	upstream, _ := url.Parse(server.URL)
+	// The core's HTTP node uses CONNECT even for an HTTP destination. Provide
+	// an actual tunnel instead of returning subscription bytes to CONNECT.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodConnect || request.Host != "subscription.invalid:80" {
+			t.Errorf("unexpected proxy request: %s %s", request.Method, request.Host)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		upstream, err := net.Dial("tcp", server.Listener.Addr().String())
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer upstream.Close()
+		downstream, buffered, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer downstream.Close()
+		_, _ = buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n")
+		if err := buffered.Flush(); err != nil {
+			t.Error(err)
+			return
+		}
+		done := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(upstream, buffered)
+			_ = upstream.Close()
+			close(done)
+		}()
+		_, _ = io.Copy(downstream, upstream)
+		_ = downstream.Close()
+		<-done
+	}))
+	defer proxy.Close()
+	upstream, _ := url.Parse(proxy.URL)
 	initial := "proxies:\n  - name: SubscriptionProxy\n    type: http\n    server: 127.0.0.1\n    port: " + upstream.Port() + "\nproxy-groups:\n  - name: One\n    type: select\n    proxies: [SubscriptionProxy, DIRECT, REJECT]\nrules:\n  - DOMAIN,subscription.invalid,One\n  - MATCH,DIRECT\n"
 	if _, err := runner.Import(initial); err != nil {
 		t.Fatal(err)
@@ -693,7 +731,7 @@ func TestImportSubscriptionWhileSystemProxyEnabled(t *testing.T) {
 	// through the HTTP proxy node in the currently selected profile.
 	state, err := runner.ImportSubscription("http://subscription.invalid/two")
 	if err != nil || state.Status != "running" || !state.SystemProxyEnabled || !systemProxy.enabled {
-		t.Fatalf("import while connected: %+v, %v", state, err)
+		t.Fatalf("import while connected: %+v, %v\n%s", state, err, runner.Logs())
 	}
 	groups, err := runner.Groups()
 	if err != nil || !hasGroup(groups, "One") || hasGroup(groups, "Two") {

@@ -63,19 +63,19 @@ reload. Inline PEM and base64 private keys remain supported.
 
 ## Toolchain and bundled core
 
-The application requires Go 1.26.8. `scripts/prepare-mihomo.sh` builds the pinned
+The application requires Go 1.26.9. `scripts/prepare-mihomo.sh` builds the pinned
 Mihomo v1.19.31 source revision with the dependency locks in `scripts/mihomo/`.
 The source archive is SHA-256 verified. Builds use `-mod=readonly`, a pinned Go
 toolchain, and a cache key covering the recipe and both lockfiles. Cached binary
 content is verified before reuse. Updating only the application's `go.mod` does
 not update the independently built core.
 
-Security updates include `x/crypto` v0.56.0, `x/net` v0.57.0, `x/text` v0.41.0,
+Security updates include `x/crypto` v0.57.0, `x/net` v0.60.0, `x/text` v0.42.0,
 `klauspost/compress` v1.18.7 and the patched DHCP revision. The core retains Go
 symbol information for accurate binary vulnerability scans. Stripping symbols
 can cause conservative module-wide reports for packages absent from the binary.
 
-The September 29, 2026 scan found no reachable vulnerabilities in the application
+The October 13, 2026 scan found no reachable vulnerabilities in the application
 or rebuilt core. The core scan also reports the unused `x/crypto/openpgp` package
 at module level (GO-2026-5932); it is not linked into this core. This is not an
 ignored scan failure: the default symbol-level scanner exits successfully.

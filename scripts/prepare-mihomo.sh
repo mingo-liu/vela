@@ -40,9 +40,9 @@ cp "$root/scripts/mihomo/go.sum" "$work/source/go.sum"
 (
   cd "$work/source"
   # Retain symbols so binary scans distinguish linked packages from unused modules.
-  CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOTOOLCHAIN=go1.26.8 go build \
+  CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOTOOLCHAIN=go1.26.9 go build \
     -mod=readonly -buildvcs=false -tags with_gvisor -trimpath \
-    -ldflags '-buildid= -X github.com/metacubex/mihomo/constant.Version=v1.19.31-vela.1 -X github.com/metacubex/mihomo/constant.BuildTime=2026-09-29' \
+    -ldflags '-buildid= -X github.com/metacubex/mihomo/constant.Version=v1.19.31-vela.2 -X github.com/metacubex/mihomo/constant.BuildTime=2026-10-13' \
     -o "$work/mihomo" .
 )
 chmod 0755 "$work/mihomo"
