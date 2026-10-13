@@ -15,7 +15,13 @@ export default function RuleList({ rules, label }: { rules: Rule[]; label: strin
 
   const remeasure = useCallback(() => {
     virtualizer.measure()
-    parent.current?.querySelectorAll<HTMLDivElement>('[data-index]').forEach(virtualizer.measureElement)
+    // Rebuild estimates before resizeItem compares against cached row sizes.
+    virtualizer.getTotalSize()
+    // Explicit refreshes must measure even while scroll events are settling.
+    // measureElement can skip synchronous reads during scrolling in WebKit.
+    parent.current?.querySelectorAll<HTMLDivElement>('[data-index]').forEach(element => {
+      virtualizer.resizeItem(Number(element.dataset.index), element.getBoundingClientRect().height)
+    })
   }, [virtualizer])
 
   // A refreshed configuration can change offscreen rows as well as mounted ones.

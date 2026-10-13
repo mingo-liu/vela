@@ -123,7 +123,7 @@ for (const [name, engine] of [['WebKit', webkit], ['Chromium', chromium]]) {
         assert.equal(await rows.count(), 1)
         assert((await rows.first().boundingBox()).height > 43)
         const heights = await list.evaluate(element => ({ client: element.clientHeight, scroll: element.scrollHeight }))
-        assert(Math.abs(heights.client - heights.scroll) <= 2)
+        assert(Math.abs(heights.client - heights.scroll) <= 2, JSON.stringify(heights))
       })
 
       await t.test('remeasures wrapped rules on resize without overlap or clipping', async () => {
