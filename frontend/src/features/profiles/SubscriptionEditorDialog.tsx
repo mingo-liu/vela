@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { LinkSimple, X } from '@phosphor-icons/react'
+import type { OperationProgress } from '../../../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
+import OperationStatus from '../../app/OperationStatus'
 import { localizeError, translate, type Language } from '../../i18n'
 
 type Props = {
@@ -7,12 +9,15 @@ type Props = {
   domain: string
   language: Language
   busy: boolean
+  operation: OperationProgress | null
+  cancelling: boolean
+  onCancelOperation: (id: number) => Promise<void>
   error: string
   onClose: () => void
   onSave: (url: string) => Promise<void>
 }
 
-export default function SubscriptionEditorDialog({ url, domain, language, busy, error, onClose, onSave }: Props) {
+export default function SubscriptionEditorDialog({ url, domain, language, busy, operation, cancelling, onCancelOperation, error, onClose, onSave }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(url)
@@ -43,6 +48,7 @@ export default function SubscriptionEditorDialog({ url, domain, language, busy, 
       </div>
       <button className="subscription-dialog-close" type="button" aria-label={t('关闭弹窗')} disabled={busy} onClick={onClose}><X size={18} aria-hidden="true" /></button>
     </div>
+    <OperationStatus operation={operation} language={language} cancelling={cancelling} onCancel={onCancelOperation} />
     <form onSubmit={event => {
       event.preventDefault()
       if (!busy && draft.trim()) void onSave(draft.trim())

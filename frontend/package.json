@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
-    "test:diagnostics": "node --test tests/diagnostics.browser.mjs"
+    "test:diagnostics": "node --test tests/diagnostics.browser.mjs",
+    "test:operations": "node --test tests/operations.browser.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

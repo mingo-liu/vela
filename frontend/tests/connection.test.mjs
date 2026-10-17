@@ -42,16 +42,45 @@ function props(overrides = {}) {
     runtime: {
       state: { status: 'starting', hasProfile: true, tunSupported: true, port: 7890, routingMode: 'rule' },
       controlsBusy: true, operation: null,
-      setSystemProxy: noop, setTun: noop, setRoutingMode: noop,
+      setSystemProxy: noop, setTun: noop, setRoutingMode: noop, cancelStartup: noop, cancellingStartup: false,
       ...overrides,
     },
   }
 }
-test('startup keeps controls busy without displaying a cancel startup button', () => {
+test('startup keeps mutation controls busy and exposes a separate cancel action', () => {
   for (const language of ['en-US', 'zh-CN']) {
     const html = renderToStaticMarkup(React.createElement(HomePage, { ...props(), language }))
     assert.match(html, /role="switch"[^>]*disabled=""/)
     assert.match(html, /<fieldset[^>]*disabled=""/)
-    assert.doesNotMatch(html, /Cancel startup|取消启动|Cancelling…|正在取消…/)
+    assert.match(html, /Cancel startup|取消启动/)
+    assert.match(html, /class="secondary-button startup-cancel" type="button">/)
   }
+})
+
+const OperationStatus = load(fileURLToPath(new URL('../src/app/OperationStatus.tsx', import.meta.url))).default
+const operation = { id: 7, active: true, kind: 'delay', target: 'Auto', phase: 'testing', total: 20, completed: 6, cancellable: true }
+const renderOperation = overrides => renderToStaticMarkup(React.createElement(OperationStatus, { operation, language: 'en-US', cancelling: false, onCancel: noop, ...overrides }))
+
+test('delay task reports real counts; downloads remain indeterminate and private', () => {
+  const html = renderOperation()
+  assert.match(html, /6 \/ 20/)
+  assert.match(html, /<progress[^>]*max="20"[^>]*value="6"/)
+  const download = renderOperation({ operation: { ...operation, kind: 'subscription', target: 'private-subscription-id', phase: 'downloading', total: 1, completed: 0 } })
+  assert.match(download, /Fetching updates/)
+  assert.doesNotMatch(download, /private-subscription-id|max=|value=|0 \/ 1/)
+  assert.equal(renderOperation({ operation: { ...operation, active: false } }), '')
+})
+
+test('apply and cancelling phases cannot cancel; clicks keep the displayed task ID', () => {
+  for (const phase of ['applying', 'cancelling']) {
+    const html = renderOperation({ operation: { ...operation, phase, cancellable: false } })
+    assert.match(html, /disabled="">Cancel task/)
+    assert.match(html, phase === 'applying' ? /Applying configuration/ : /Cancelling/)
+  }
+  assert.match(renderOperation({ cancelling: true }), /disabled="">Cancel task/)
+  const calls = []
+  const tree = OperationStatus({ operation, language: 'en-US', cancelling: false, onCancel: id => calls.push(id) })
+  const button = React.Children.toArray(tree.props.children).find(child => child.type === 'button')
+  button.props.onClick()
+  assert.deepEqual(calls, [7])
 })
