@@ -5,8 +5,6 @@ const chinese: Record<string, string> = {
 }
 
 const english: Record<string, string> = {
-  '检查系统代理失败': 'Could not check system proxy',
-  '切换网络服务时启用系统代理失败': 'Could not enable system proxy on the new network service',
   '自定义规则': 'Custom rules',
   '编辑配置': 'Edit configuration',
   '配置规则': 'Configuration rules',
@@ -221,6 +219,8 @@ export function translate(language: Language, text: string): string {
 }
 
 const englishErrors: Record<string, string> = {
+  '检查系统代理失败': 'Could not check system proxy',
+  '切换网络服务时启用系统代理失败': 'Could not enable system proxy on the new network service',
   '订阅标识无效': 'Invalid subscription ID',
   '当前订阅记录无效': 'Invalid active subscription record',
   '请先切换到本地配置': 'Switch to a local profile first',
