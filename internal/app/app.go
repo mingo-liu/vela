@@ -28,6 +28,22 @@ func Run(assets fs.FS) error {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return err
 	}
+	stopUpdates := make(chan struct{})
+	var runner *mihomo.Runner
+	var window *application.WebviewWindow
+	// Claim the instance before Runner initialization can recover proxy settings.
+	wails := application.New(desktopApplicationOptions(assets, func() {
+		close(stopUpdates)
+		if runner != nil {
+			runner.Close()
+		}
+	}, func() {
+		if window != nil {
+			window.UnMinimise()
+			window.Show()
+			window.Focus()
+		}
+	}))
 	store := profile.NewStore(dataDir)
 	initialPort := profile.DefaultMixedPort
 	language := profile.LanguageChinese
@@ -36,13 +52,11 @@ func Run(assets fs.FS) error {
 		language = settings.Language
 	}
 	subs := profile.NewSubscriptions(store, profile.NewFileURLStore(dataDir, macos.SubscriptionKeychain{}))
-	stopUpdates := make(chan struct{})
 	binary := findBinary()
-	var wails *application.App
 	var systemProxyMenuItem *application.MenuItem
 	var tunMenuItem *application.MenuItem
 	menuStateUpdates := make(chan struct{}, 1)
-	runner := mihomo.NewRunner(store, subs, dataDir, binary, initialPort, macos.NewSystemProxy(dataDir), func(state mihomo.State) {
+	runner = mihomo.NewRunner(store, subs, dataDir, binary, initialPort, macos.NewSystemProxy(dataDir), func(state mihomo.State) {
 		select {
 		case menuStateUpdates <- struct{}{}:
 		default:
@@ -66,20 +80,12 @@ func Run(assets fs.FS) error {
 		}))
 	}
 	var updateMenuLanguage func(string)
-	var window *application.WebviewWindow
 	service := desktop.NewRuntimeService(runner, store, dataDir, func(language string) {
 		if updateMenuLanguage != nil {
 			updateMenuLanguage(language)
 		}
 	}, func() bool { return window != nil && window.IsVisible() && !window.IsMinimised() })
-	wails = application.New(application.Options{
-		Name:        "Vela",
-		Description: "Vela local proxy",
-		Services:    []application.Service{application.NewService(service)},
-		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
-		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
-		OnShutdown:  func() { close(stopUpdates); runner.Close() },
-	})
+	wails.RegisterService(application.NewService(service))
 	window = wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Vela", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 480,
 		URL: "/", BackgroundColour: application.NewRGB(255, 255, 255),
@@ -177,6 +183,20 @@ func Run(assets fs.FS) error {
 		}
 	}()
 	return wails.Run()
+}
+
+func desktopApplicationOptions(assets fs.FS, onShutdown, onSecondLaunch func()) application.Options {
+	return application.Options{
+		Name:        "Vela",
+		Description: "Vela local proxy",
+		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
+		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
+		OnShutdown:  onShutdown,
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID:               "local.vela.desktop",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) { onSecondLaunch() },
+		},
+	}
 }
 
 func translateMenu(language, chinese, english string) string {
