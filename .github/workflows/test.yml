@@ -47,7 +47,7 @@ jobs:
       - name: Test frontend refresh lifecycle
         run: npm --prefix frontend test
 
-      - name: Test task progress and cancellation in browsers
+      - name: Test startup controls and task busy states in browsers
         run: |
           npm --prefix frontend exec -- playwright install chromium webkit
           npm --prefix frontend run test:operations

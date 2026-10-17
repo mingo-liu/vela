@@ -44,14 +44,21 @@ npm --prefix frontend exec -- playwright install chromium webkit
 npm --prefix frontend run test:diagnostics
 ```
 
-Task progress and cancellation are shared across pages, with a cancellation control
-inside the subscription URL dialog while it is modal. Browser regressions exercise
-the runtime hook, busy accounting, startup cancellation and modal download
-cancellation in WebKit and Chromium:
+Connection startup keeps mutation controls disabled without an extra cancel
+button. Download and delay tasks retain shared busy accounting and their inline
+feature feedback, without additional task banners. Browser regressions cover
+startup controls, busy accounting, subscription editor state and incremental
+node delay results in WebKit and Chromium:
 
 ```sh
 npm --prefix frontend run test:operations
 ```
+
+Delay progress includes an immutable snapshot of completed probes, with zero
+representing failure. `useProxies` merges these snapshots only into the matching
+request and profile revision, so finished nodes update while other probes remain
+pending. Starting a new test clears that group's old results. The final method
+response reconciles successful delays; cancelled tests retain completed results.
 
 ## Backend
 

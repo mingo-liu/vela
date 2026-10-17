@@ -6,10 +6,11 @@ import type { Group } from '../../../bindings/github.com/mingo-liu/vela/internal
 import { errorMessage as message } from '../../lib/errors'
 
 export type SortMode = 'name' | 'delay'
+type DelayRequest = { group: string; revision: number; afterOperationID: number; operationID?: number }
 const delayCacheDuration = 3 * 60 * 1000
 
 export function useProxies(runtime: RuntimeController, visible: boolean, page: Page) {
-  const { state, profileRevision, controlsBusy, setNotice, startAction, finishAction } = runtime
+  const { state, operation, profileRevision, controlsBusy, setNotice, startAction, finishAction } = runtime
   const [groups, setGroups] = useState<Group[]>([])
   const [groupsRevision, setGroupsRevision] = useState(-1)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
@@ -18,6 +19,7 @@ export function useProxies(runtime: RuntimeController, visible: boolean, page: P
   const [testingGroup, setTestingGroup] = useState<string | null>(null)
   const [completedDelayTests, setCompletedDelayTests] = useState(0)
   const testingGroupRef = useRef<string | null>(null)
+  const delayRequest = useRef<DelayRequest | null>(null)
   const delayCache = useRef<Record<string, { options: string; testedAt: number }>>({})
   const [sortModes, setSortModes] = useState<Record<string, SortMode>>({})
   const [nodeNames, setNodeNames] = useState<string[]>([])
@@ -48,6 +50,15 @@ export function useProxies(runtime: RuntimeController, visible: boolean, page: P
     setMeasuredGroups({})
   }, [profileRevision])
 
+  useEffect(() => {
+    const request = delayRequest.current
+    if (!request || request.revision !== profileRevision || operation?.kind !== 'delay' || operation.target !== request.group || operation.id <= request.afterOperationID || (request.operationID !== undefined && operation.id !== request.operationID)) return
+    request.operationID = operation.id
+    if (operation.delays) {
+      setGroupDelays(current => ({ ...current, [request.group]: { ...current[request.group], ...operation.delays } }))
+    }
+  }, [operation, profileRevision])
+
   const select = async (group: string, option: string) => {
     startAction()
     setNotice('')
@@ -69,19 +80,24 @@ export function useProxies(runtime: RuntimeController, visible: boolean, page: P
     if (testingGroupRef.current) return
     const options = JSON.stringify(groups.find(candidate => candidate.name === group)?.options ?? [])
     const revision = profileRevision
+    const request: DelayRequest = { group, revision, afterOperationID: operation?.id ?? 0 }
+    delayRequest.current = request
     testingGroupRef.current = group
     delayCache.current[group] = { options, testedAt: Date.now() }
     setTestingGroup(group)
+    setGroupDelays(current => ({ ...current, [group]: {} }))
+    setMeasuredGroups(current => ({ ...current, [group]: false }))
     setNotice('')
     try {
       const delays = await Runtime.TestGroupDelay(group)
       if (profileRevisionRef.current === revision) {
-        setGroupDelays(current => ({ ...current, [group]: delays ?? {} }))
+        setGroupDelays(current => ({ ...current, [group]: { ...current[group], ...delays } }))
         setMeasuredGroups(current => ({ ...current, [group]: true }))
       }
     } catch (error) {
       if (profileRevisionRef.current === revision) setNotice(message(error))
     } finally {
+      if (delayRequest.current === request) delayRequest.current = null
       testingGroupRef.current = null
       setTestingGroup(null)
       setCompletedDelayTests(count => count + 1)

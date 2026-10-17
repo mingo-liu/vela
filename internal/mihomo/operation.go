@@ -3,6 +3,7 @@ package mihomo
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 )
 
@@ -23,6 +24,8 @@ type OperationProgress struct {
 	Total       int    `json:"total"`
 	Active      bool   `json:"active"`
 	Cancellable bool   `json:"cancellable"`
+	// Delays contains completed probes; zero denotes a failed probe.
+	Delays map[string]int `json:"delays,omitempty"`
 }
 
 func (r *Runner) SetOperationObserver(observer func(OperationProgress)) {
@@ -34,7 +37,7 @@ func (r *Runner) SetOperationObserver(observer func(OperationProgress)) {
 func (r *Runner) Operation() OperationProgress {
 	r.taskMu.Lock()
 	defer r.taskMu.Unlock()
-	return r.taskProgress
+	return r.operationSnapshot()
 }
 
 // CancelOperation does not wait on the connection or state locks. A stale UI
@@ -90,10 +93,14 @@ func (r *Runner) beginApply(ctx context.Context, id uint64) error {
 	return nil
 }
 
-func (r *Runner) advanceOperation(id uint64, total int) {
+func (r *Runner) recordDelayResult(id uint64, option string, delay, total int) {
 	r.taskMu.Lock()
 	defer r.taskMu.Unlock()
-	if id == r.taskProgress.ID && r.taskProgress.Active {
+	if id == r.taskProgress.ID && r.taskProgress.Active && r.taskProgress.Phase != "cancelling" {
+		if r.taskProgress.Delays == nil {
+			r.taskProgress.Delays = make(map[string]int)
+		}
+		r.taskProgress.Delays[option] = delay
 		r.taskProgress.Total = total
 		r.taskProgress.Completed++
 		r.emitProgress()
@@ -115,8 +122,16 @@ func (r *Runner) finishOperation(id uint64) {
 // emitProgress is called with taskMu held; observers must not call Runner.
 func (r *Runner) emitProgress() {
 	if r.onProgress != nil {
-		r.onProgress(r.taskProgress)
+		r.onProgress(r.operationSnapshot())
 	}
+}
+
+// operationSnapshot is called with taskMu held. Keep event and read snapshots
+// independent of the map updated by concurrent probe workers.
+func (r *Runner) operationSnapshot() OperationProgress {
+	snapshot := r.taskProgress
+	snapshot.Delays = maps.Clone(snapshot.Delays)
+	return snapshot
 }
 
 func operationError(err error) error {

@@ -42,7 +42,7 @@ export default function ProxiesPage({ runtime, controller, language, onNavigate 
         const delays = groupDelays[group.name] ?? {}
         const options = [...(group.options ?? [])]
         if (sortMode === 'name') options.sort((a, b) => a.localeCompare(b, language, { numeric: true }))
-        if (sortMode === 'delay') options.sort((a, b) => (delays[a] ?? Infinity) - (delays[b] ?? Infinity) || a.localeCompare(b, language, { numeric: true }))
+        if (sortMode === 'delay') options.sort((a, b) => (delays[a] || Infinity) - (delays[b] || Infinity) || a.localeCompare(b, language, { numeric: true }))
         return <section className="proxy-group" key={group.name} aria-label={`${group.name} ${t('策略组')}`}>
           <div className="proxy-group-header">
             <button className="proxy-group-toggle" type="button" aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}>
@@ -54,7 +54,13 @@ export default function ProxiesPage({ runtime, controller, language, onNavigate 
             </div>
             <button className="proxy-group-expand" type="button" aria-label={`${expanded ? t('收起') : t('展开')} ${group.name}`} aria-expanded={expanded} aria-controls={`proxy-group-${index}`} onClick={() => toggleGroup(group.name, index === 0)}><span>{group.options?.length ?? 0} {t('个节点')}</span><CaretDown size={20} className={expanded ? 'expanded' : ''} /></button>
           </div>
-          {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{options.map(option => <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={controlsBusy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span className="proxy-node-meta"><span className="proxy-node-kind">{groups.some(candidate => candidate.name === option) ? t('策略组') : nodeNames.includes(option) ? t('代理节点') : t('内置节点')}</span><span className={`proxy-node-delay${testingGroup === group.name ? ' testing' : delays[option] ? ' measured' : ''}`}>{testingGroup === group.name ? <>{t('测速中')}<span className="delay-dots" aria-hidden="true"><i /><i /><i /></span></> : delays[option] ? `${delays[option]} ms` : measuredGroups[group.name] ? t('失败') : t('未测速')}</span></span></button>)}</div>}
+          {expanded && <div className="proxy-node-grid" id={`proxy-group-${index}`}>{options.map(option => {
+            const completed = Object.prototype.hasOwnProperty.call(delays, option)
+            const delay = completed ? delays[option] : undefined
+            const measured = delay !== undefined && delay > 0
+            const testing = testingGroup === group.name && !completed
+            return <button className={`proxy-node${option === group.current ? ' selected' : ''}`} type="button" key={option} aria-pressed={option === group.current} disabled={controlsBusy} onClick={() => void select(group.name, option)}><strong title={option}>{option}</strong><span className="proxy-node-meta"><span className={`proxy-node-delay${testing ? ' testing' : measured ? ' measured' : ''}`}>{testing ? <>{t('测速中')}<span className="delay-dots" aria-hidden="true"><i /><i /><i /></span></> : measured ? `${delay} ms` : completed || measuredGroups[group.name] ? t('失败') : t('未测速')}</span></span></button>
+          })}</div>}
         </section>
       })}</div>
       {groups.length === 0 && nodeNames.length > 0 && <div className="profile-nodes"><h3>{t('当前配置节点')} <small>{nodeNames.length} {t('个')}</small></h3><div className="proxy-options" aria-label={t('当前配置节点')}>{nodeNames.map(name => <span key={name}>{name}</span>)}</div></div>}

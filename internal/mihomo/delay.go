@@ -99,12 +99,15 @@ func (r *Runner) TestGroupDelay(group string) (delays map[string]int, err error)
 					return
 				}
 				delay, probeErr := testProxyDelay(ctx, client, apiPort, secret, option)
-				if probeErr == nil && delay > 0 {
+				if probeErr != nil || delay <= 0 {
+					delay = 0
+				}
+				if delay > 0 {
 					resultsMu.Lock()
 					delays[option] = delay
 					resultsMu.Unlock()
 				}
-				r.advanceOperation(taskID, len(options))
+				r.recordDelayResult(taskID, option, delay, len(options))
 			}
 		}()
 	}

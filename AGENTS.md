@@ -57,6 +57,10 @@ wails3 package             # Build and package bin/Vela.app
 open bin/Vela.app          # Launch the packaged application
 ```
 
+After completing any change, proactively launch Vela for the user to inspect.
+If a development instance is already running, ensure it has loaded the changes
+and bring its window to the foreground; rebuild and relaunch when needed.
+
 The Wails tasks prepare the core, geodata, TUN service, bindings, and frontend.
 The first core build downloads and verifies pinned source; later builds reuse a
 verified cache. The Vite server defaults to `127.0.0.1:9245`; override its port

@@ -42,45 +42,34 @@ function props(overrides = {}) {
     runtime: {
       state: { status: 'starting', hasProfile: true, tunSupported: true, port: 7890, routingMode: 'rule' },
       controlsBusy: true, operation: null,
-      setSystemProxy: noop, setTun: noop, setRoutingMode: noop, cancelStartup: noop, cancellingStartup: false,
+      setSystemProxy: noop, setTun: noop, setRoutingMode: noop,
       ...overrides,
     },
   }
 }
-test('startup keeps mutation controls busy and exposes a separate cancel action', () => {
+test('startup keeps mutation controls busy without an extra cancel button', () => {
   for (const language of ['en-US', 'zh-CN']) {
     const html = renderToStaticMarkup(React.createElement(HomePage, { ...props(), language }))
     assert.match(html, /role="switch"[^>]*disabled=""/)
     assert.match(html, /<fieldset[^>]*disabled=""/)
-    assert.match(html, /Cancel startup|取消启动/)
-    assert.match(html, /class="secondary-button startup-cancel" type="button">/)
+    assert.doesNotMatch(html, /Cancel startup|取消启动|startup-cancel/)
   }
 })
 
-const OperationStatus = load(fileURLToPath(new URL('../src/app/OperationStatus.tsx', import.meta.url))).default
-const operation = { id: 7, active: true, kind: 'delay', target: 'Auto', phase: 'testing', total: 20, completed: 6, cancellable: true }
-const renderOperation = overrides => renderToStaticMarkup(React.createElement(OperationStatus, { operation, language: 'en-US', cancelling: false, onCancel: noop, ...overrides }))
+const ProxiesPage = load(fileURLToPath(new URL('../src/features/proxies/ProxiesPage.tsx', import.meta.url))).default
 
-test('delay task reports real counts; downloads remain indeterminate and private', () => {
-  const html = renderOperation()
-  assert.match(html, /6 \/ 20/)
-  assert.match(html, /<progress[^>]*max="20"[^>]*value="6"/)
-  const download = renderOperation({ operation: { ...operation, kind: 'subscription', target: 'private-subscription-id', phase: 'downloading', total: 1, completed: 0 } })
-  assert.match(download, /Fetching updates/)
-  assert.doesNotMatch(download, /private-subscription-id|max=|value=|0 \/ 1/)
-  assert.equal(renderOperation({ operation: { ...operation, active: false } }), '')
-})
-
-test('apply and cancelling phases cannot cancel; clicks keep the displayed task ID', () => {
-  for (const phase of ['applying', 'cancelling']) {
-    const html = renderOperation({ operation: { ...operation, phase, cancellable: false } })
-    assert.match(html, /disabled="">Cancel task/)
-    assert.match(html, phase === 'applying' ? /Applying configuration/ : /Cancelling/)
+test('node cards show latency without a node type badge', () => {
+  const node = 'Bronze-台湾-01'
+  const runtime = { state: { hasProfile: true, error: '' }, notice: '', controlsBusy: false }
+  const controller = {
+    groups: [{ name: 'Main', current: node, options: [node] }], nodeNames: [node],
+    expandedGroups: {}, groupDelays: { Main: { [node]: 388 } }, measuredGroups: { Main: true },
+    testingGroup: null, sortModes: {}, select: noop, toggleGroup: noop, testGroupDelay: noop, toggleGroupSort: noop,
   }
-  assert.match(renderOperation({ cancelling: true }), /disabled="">Cancel task/)
-  const calls = []
-  const tree = OperationStatus({ operation, language: 'en-US', cancelling: false, onCancel: id => calls.push(id) })
-  const button = React.Children.toArray(tree.props.children).find(child => child.type === 'button')
-  button.props.onClick()
-  assert.deepEqual(calls, [7])
+  for (const language of ['en-US', 'zh-CN']) {
+    const html = renderToStaticMarkup(React.createElement(ProxiesPage, { runtime, controller, language, onNavigate: noop }))
+    assert.match(html, /388 ms/)
+    assert.match(html, /aria-pressed="true"/)
+    assert.doesNotMatch(html, /proxy-node-kind|Proxy nodes|代理节点/)
+  }
 })
