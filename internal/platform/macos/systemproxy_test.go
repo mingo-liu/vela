@@ -11,34 +11,51 @@ import (
 )
 
 type fakeNetwork struct {
-	state proxySnapshot
-	fail  string
+	state       proxySnapshot
+	fail        string
+	device      string
+	others      map[string]*proxySnapshot
+	failService string
 }
 
 func (f *fakeNetwork) run(name string, args ...string) (string, error) {
 	if name == "route" {
-		return "   interface: en0\n", nil
+		if f.device == "offline" {
+			return "", errors.New("no default route")
+		}
+		device := f.device
+		if device == "" {
+			device = "en0"
+		}
+		return "   interface: " + device + "\n", nil
 	}
 	if name != "networksetup" || len(args) == 0 {
 		return "", errors.New("unexpected command")
 	}
-	if args[0] == f.fail {
+	if args[0] == f.fail && (f.failService == "" || len(args) > 1 && args[1] == f.failService) {
 		return "", errors.New("injected networksetup failure")
 	}
 	if args[0] == "-listnetworkserviceorder" {
-		return "(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n", nil
+		return "(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n(2) Ethernet\n(Hardware Port: USB LAN, Device: en1)\n", nil
 	}
-	if len(args) < 2 || args[1] != "Wi-Fi" {
-		return "", errors.New("wrong network service")
+	if len(args) < 2 {
+		return "", errors.New("missing network service")
+	}
+	state := &f.state
+	if args[1] != "Wi-Fi" {
+		state = f.others[args[1]]
+		if state == nil {
+			return "", errors.New("wrong network service")
+		}
 	}
 	entry := func(kind string) *proxyEntry {
 		switch kind {
 		case "webproxy":
-			return &f.state.HTTP
+			return &state.HTTP
 		case "securewebproxy":
-			return &f.state.HTTPS
+			return &state.HTTPS
 		default:
-			return &f.state.SOCKS
+			return &state.SOCKS
 		}
 	}
 	for _, kind := range []string{"webproxy", "securewebproxy", "socksfirewallproxy"} {
@@ -63,21 +80,21 @@ func (f *fakeNetwork) run(name string, args ...string) (string, error) {
 	switch args[0] {
 	case "-getautoproxyurl":
 		flag := "No"
-		if f.state.PAC.Enabled {
+		if state.PAC.Enabled {
 			flag = "Yes"
 		}
-		return fmt.Sprintf("URL: %s\nEnabled: %s\n", f.state.PAC.URL, flag), nil
+		return fmt.Sprintf("URL: %s\nEnabled: %s\n", state.PAC.URL, flag), nil
 	case "-setautoproxyurl":
-		f.state.PAC = autoProxy{Enabled: true, URL: args[2]}
+		state.PAC = autoProxy{Enabled: true, URL: args[2]}
 	case "-setautoproxystate":
-		f.state.PAC.Enabled = args[2] == "on"
+		state.PAC.Enabled = args[2] == "on"
 	case "-getproxyautodiscovery":
-		if f.state.Auto {
+		if state.Auto {
 			return "Auto Proxy Discovery: On\n", nil
 		}
 		return "Auto Proxy Discovery: Off\n", nil
 	case "-setproxyautodiscovery":
-		f.state.Auto = args[2] == "on"
+		state.Auto = args[2] == "on"
 	default:
 		return "", fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -226,4 +243,84 @@ func TestSystemProxyWatchRestoresAfterParentExit(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("watcher did not restore system proxy after parent pipe closed")
+}
+
+func TestSystemProxyFollowsDefaultServiceAndRestoresBoth(t *testing.T) {
+	previousWiFi := proxySnapshot{HTTP: proxyEntry{Enabled: true, Server: "127.0.0.1", Port: "7897"}, HTTPS: proxyEntry{Server: "127.0.0.1", Port: "8001"}, SOCKS: proxyEntry{Server: "127.0.0.1", Port: "8002"}, PAC: autoProxy{Enabled: true, URL: "http://wifi.test/proxy.pac"}}
+	previousEthernet := proxySnapshot{HTTP: proxyEntry{Server: "127.0.0.1", Port: "8003"}, HTTPS: proxyEntry{Server: "127.0.0.1", Port: "8004"}, SOCKS: proxyEntry{Enabled: true, Server: "127.0.0.1", Port: "7898"}, Auto: true}
+	ethernet := previousEthernet
+	fake := &fakeNetwork{state: previousWiFi, others: map[string]*proxySnapshot{"Ethernet": &ethernet}}
+	proxy := NewSystemProxy(t.TempDir())
+	proxy.run, proxy.watchEnabled = fake.run, false
+	if err := proxy.Enable(7890); err != nil {
+		t.Fatal(err)
+	}
+	fake.device = "en1"
+	if active, err := proxy.Active(); err != nil || active {
+		t.Fatalf("old service reported active: %t, %v", active, err)
+	}
+	if active, err := proxy.Refresh(); err != nil || !active {
+		t.Fatalf("handoff failed: %t, %v", active, err)
+	}
+	if !reflect.DeepEqual(fake.state, previousWiFi) || !owned(ethernet.HTTP, 7890) {
+		t.Fatalf("old service not restored or new not configured: %+v, %+v", fake.state, ethernet)
+	}
+	fake.device = "en0"
+	if active, err := proxy.Refresh(); err != nil || !active {
+		t.Fatalf("return handoff failed: %t, %v", active, err)
+	}
+	if !reflect.DeepEqual(ethernet, previousEthernet) {
+		t.Fatalf("Ethernet not restored: %+v", ethernet)
+	}
+	if err := proxy.Disable(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fake.state, previousWiFi) {
+		t.Fatalf("Wi-Fi not restored: %+v", fake.state)
+	}
+}
+
+func TestSystemProxyHandoffPreservesTakeoverAndRetriesOffline(t *testing.T) {
+	ethernet := proxySnapshot{}
+	fake := &fakeNetwork{others: map[string]*proxySnapshot{"Ethernet": &ethernet}}
+	proxy := NewSystemProxy(t.TempDir())
+	proxy.run, proxy.watchEnabled = fake.run, false
+	if err := proxy.Enable(7890); err != nil {
+		t.Fatal(err)
+	}
+	fake.device = "offline"
+	if active, err := proxy.Refresh(); !active || err == nil {
+		t.Fatalf("transient failure lost ownership: %t, %v", active, err)
+	}
+	if !owned(fake.state.HTTP, 7890) {
+		t.Fatal("offline check changed proxy")
+	}
+	fake.device = "en1"
+	fake.state.HTTP = proxyEntry{Enabled: true, Server: "127.0.0.1", Port: "7897"}
+	if active, err := proxy.Refresh(); active || err != nil {
+		t.Fatalf("takeover ignored: %t, %v", active, err)
+	}
+	if err := proxy.Disable(); err != nil {
+		t.Fatal(err)
+	}
+	if fake.state.HTTP.Port != "7897" || ethernet.HTTP.Enabled {
+		t.Fatal("takeover overwritten or new service changed")
+	}
+}
+
+func TestSystemProxyHandoffRollsBackFailedNewService(t *testing.T) {
+	ethernet := proxySnapshot{Auto: true}
+	fake := &fakeNetwork{others: map[string]*proxySnapshot{"Ethernet": &ethernet}}
+	proxy := NewSystemProxy(t.TempDir())
+	proxy.run, proxy.watchEnabled = fake.run, false
+	if err := proxy.Enable(7890); err != nil {
+		t.Fatal(err)
+	}
+	fake.device, fake.fail, fake.failService = "en1", "-setsecurewebproxy", "Ethernet"
+	if active, err := proxy.Refresh(); active || err == nil {
+		t.Fatalf("handoff failure not reported: %t, %v", active, err)
+	}
+	if fake.state.HTTP.Enabled || ethernet.HTTP.Enabled || ethernet.HTTPS.Enabled || ethernet.SOCKS.Enabled || !ethernet.Auto {
+		t.Fatalf("handoff left changed settings: %+v, %+v", fake.state, ethernet)
+	}
 }

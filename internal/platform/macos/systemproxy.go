@@ -297,6 +297,7 @@ func (p *SystemProxy) Enable(port int) error {
 	return nil
 }
 
+// Active checks the default service as well as the settings Vela owns.
 func (p *SystemProxy) Active() (bool, error) {
 	s, err := p.snapshot()
 	if errors.Is(err, os.ErrNotExist) {
@@ -305,6 +306,47 @@ func (p *SystemProxy) Active() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	service, err := p.activeService()
+	if err != nil || service != s.Service {
+		return false, err
+	}
+	return p.activeOnService(s)
+}
+
+// Refresh follows default-service changes while preserving each service's prior
+// settings. A true result with an error retains ownership during a transient
+// routing/read failure, allowing the monitor to retry without disconnecting.
+func (p *SystemProxy) Refresh() (bool, error) {
+	s, err := p.snapshot()
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	active, err := p.activeOnService(s)
+	if err != nil {
+		return true, err
+	}
+	if !active {
+		return false, nil
+	}
+	service, err := p.activeService()
+	if err != nil {
+		return true, err
+	}
+	if service == s.Service {
+		return true, nil
+	}
+	// Enable first restores the old service, then snapshots and applies the new
+	// service. Failed applies retain its existing rollback/recovery behavior.
+	if err := p.Enable(s.Port); err != nil {
+		return false, fmt.Errorf("切换网络服务时启用系统代理失败: %w", err)
+	}
+	return true, nil
+}
+
+func (p *SystemProxy) activeOnService(s proxySnapshot) (bool, error) {
 	current, err := p.read(s.Service, s.Port)
 	if err != nil {
 		return false, err
