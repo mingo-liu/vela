@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type SystemProxy interface {
 	Disable() error
 	Recover() error
 	Active() (bool, error)
+	Refresh() (bool, error)
 }
 
 func (r *Runner) SetSystemProxy(enabled bool) (State, error) {
@@ -106,30 +108,44 @@ func (r *Runner) monitorSystemProxy(generation uint64) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		r.operationMu.Lock()
-		r.mu.Lock()
-		if !r.state.SystemProxyEnabled || r.proxyGeneration != generation {
-			r.mu.Unlock()
-			r.operationMu.Unlock()
+		if !r.refreshSystemProxy(generation) {
 			return
 		}
-		r.mu.Unlock()
-		active, err := r.systemProxy.Active()
-		r.mu.Lock()
-		if err == nil && !active {
-			r.mu.Unlock()
-			_, stopErr := r.stop()
-			r.mu.Lock()
-			r.state.Error = "系统代理已被其他应用改写"
-			if stopErr != nil {
-				r.state.Error += fmt.Sprintf("；关闭失败: %v", stopErr)
-			}
-			r.emit()
-			r.mu.Unlock()
-			r.operationMu.Unlock()
-			return
-		}
-		r.mu.Unlock()
-		r.operationMu.Unlock()
 	}
+}
+
+func (r *Runner) refreshSystemProxy(generation uint64) bool {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.state.SystemProxyEnabled || r.proxyGeneration != generation {
+		return false
+	}
+	r.mu.Unlock()
+	active, err := r.systemProxy.Refresh()
+	r.mu.Lock()
+	const checkError = "检查系统代理失败: "
+	if active {
+		if err != nil {
+			r.state.Error = checkError + err.Error()
+			r.emit()
+		} else if strings.HasPrefix(r.state.Error, checkError) {
+			r.state.Error = ""
+			r.emit()
+		}
+		return true
+	}
+	r.mu.Unlock()
+	_, stopErr := r.stop()
+	r.mu.Lock()
+	r.state.Error = "系统代理已被其他应用改写"
+	if err != nil {
+		r.state.Error = err.Error()
+	}
+	if stopErr != nil {
+		r.state.Error += fmt.Sprintf("；关闭失败: %v", stopErr)
+	}
+	r.emit()
+	return false
 }

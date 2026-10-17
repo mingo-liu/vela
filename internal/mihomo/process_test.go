@@ -940,8 +940,9 @@ func (p *testSystemProxy) Disable() error {
 	p.port = 0
 	return nil
 }
-func (p *testSystemProxy) Recover() error        { return p.Disable() }
-func (p *testSystemProxy) Active() (bool, error) { return p.enabled, nil }
+func (p *testSystemProxy) Recover() error         { return p.Disable() }
+func (p *testSystemProxy) Active() (bool, error)  { return p.enabled, nil }
+func (p *testSystemProxy) Refresh() (bool, error) { return p.Active() }
 
 type testURLStore struct{ value string }
 

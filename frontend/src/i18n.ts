@@ -5,6 +5,8 @@ const chinese: Record<string, string> = {
 }
 
 const english: Record<string, string> = {
+  '检查系统代理失败': 'Could not check system proxy',
+  '切换网络服务时启用系统代理失败': 'Could not enable system proxy on the new network service',
   '自定义规则': 'Custom rules',
   '编辑配置': 'Edit configuration',
   '配置规则': 'Configuration rules',
