@@ -44,6 +44,15 @@ npm --prefix frontend exec -- playwright install chromium webkit
 npm --prefix frontend run test:diagnostics
 ```
 
+Task progress and cancellation are shared across pages, with a cancellation control
+inside the subscription URL dialog while it is modal. Browser regressions exercise
+the runtime hook, busy accounting, startup cancellation and modal download
+cancellation in WebKit and Chromium:
+
+```sh
+npm --prefix frontend run test:operations
+```
+
 ## Backend
 
 `internal/desktop/RuntimeService` remains the Wails boundary. The `internal/mihomo`

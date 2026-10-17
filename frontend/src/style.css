@@ -368,3 +368,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @media (prefers-reduced-motion: reduce) {
   .subscription-refresh.updating svg { animation: none; }
 }
+
+.operation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid #e7e8eb; border-radius: 12px; background: #f8f9fb; }
+.operation-description { display: grid; gap: 5px; flex: 1; min-width: 100px; overflow-wrap: anywhere; font-size: 12px; }
+.operation-description > span { color: #62666d; }
+.operation-count { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.operation-status progress { width: 100%; height: 6px; accent-color: #f31645; }
+.startup-cancel { margin-top: 12px; }

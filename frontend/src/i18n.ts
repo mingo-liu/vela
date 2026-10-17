@@ -5,6 +5,14 @@ const chinese: Record<string, string> = {
 }
 
 const english: Record<string, string> = {
+  '任务进度': 'Task progress',
+  '节点测速': 'Node delay test',
+  '订阅下载': 'Subscription download',
+  '测速进度': 'Delay test progress',
+  '下载进度': 'Download progress',
+  '正在测试节点延迟…': 'Testing node delays…',
+  '取消任务': 'Cancel task',
+  '取消启动': 'Cancel startup',
   '自定义规则': 'Custom rules',
   '编辑配置': 'Edit configuration',
   '配置规则': 'Configuration rules',

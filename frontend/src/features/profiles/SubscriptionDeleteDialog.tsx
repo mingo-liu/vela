@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Trash, X } from '@phosphor-icons/react'
+import type { OperationProgress } from '../../../bindings/github.com/mingo-liu/vela/internal/mihomo/models'
+import OperationStatus from '../../app/OperationStatus'
 import { localizeError, translate, type Language } from '../../i18n'
 
 type Props = {
@@ -7,12 +9,15 @@ type Props = {
   language: Language
   active: boolean
   busy: boolean
+  operation: OperationProgress | null
+  cancelling: boolean
+  onCancelOperation: (id: number) => Promise<void>
   error: string
   onClose: () => void
   onConfirm: () => Promise<void>
 }
 
-export default function SubscriptionDeleteDialog({ domain, language, active, busy, error, onClose, onConfirm }: Props) {
+export default function SubscriptionDeleteDialog({ domain, language, active, busy, operation, cancelling, onCancelOperation, error, onClose, onConfirm }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const t = (text: string) => translate(language, text)
@@ -41,6 +46,7 @@ export default function SubscriptionDeleteDialog({ domain, language, active, bus
       </div>
       <button className="subscription-dialog-close" type="button" aria-label={t('关闭弹窗')} disabled={busy} onClick={onClose}><X size={18} aria-hidden="true" /></button>
     </div>
+    <OperationStatus operation={operation} language={language} cancelling={cancelling} onCancel={onCancelOperation} />
     {active && <p className="subscription-dialog-description" id="subscription-delete-description">{t('删除此订阅及其节点和规则？当前连接将停止，删除后需要重新选择或导入配置。')}</p>}
     <form onSubmit={event => {
       event.preventDefault()

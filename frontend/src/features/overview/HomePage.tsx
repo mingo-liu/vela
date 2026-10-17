@@ -15,7 +15,7 @@ type Props = {
 }
 
 export default function HomePage({ runtime, groups, language, visible, onNavigate }: Props) {
-  const { state, notice, controlsBusy, operation, running, connected, profileRevision, setSystemProxy, setTun, setRoutingMode } = runtime
+  const { state, notice, controlsBusy, operation, running, connected, profileRevision, setSystemProxy, setTun, setRoutingMode, cancelStartup, cancellingStartup } = runtime
   const t = (text: string) => translate(language, text)
   const selectedRoutingMode = routingModes.find(option => option.value === state.routingMode) ?? routingModes[0]
   return <>
@@ -28,6 +28,7 @@ export default function HomePage({ runtime, groups, language, visible, onNavigat
         <button className={`mode-option${state.systemProxyEnabled ? ' on' : ''}`} type="button" role="switch" aria-label={t('系统代理')} aria-checked={state.systemProxyEnabled} disabled={(controlsBusy && !(state.systemProxyEnabled && operation?.cancellable)) || (!state.hasProfile && !state.systemProxyEnabled)} onClick={() => void setSystemProxy(!state.systemProxyEnabled)}><span><strong>{t('系统代理')}</strong></span><span className="switch-track"><span className="switch-knob" /></span></button>
         <button className={`mode-option${state.tunEnabled ? ' on' : ''}`} type="button" role="switch" aria-label={t('Tun 模式')} aria-checked={state.tunEnabled} disabled={(controlsBusy && !(state.tunEnabled && operation?.cancellable)) || !state.tunSupported || (!state.hasProfile && !state.tunEnabled)} onClick={() => void setTun(!state.tunEnabled)}><span><strong>{t('Tun 模式')}</strong></span><span className="switch-track"><span className="switch-knob" /></span></button>
       </div>
+      {state.status === 'starting' && <button className="secondary-button startup-cancel" type="button" disabled={cancellingStartup} onClick={() => void cancelStartup()}>{t(cancellingStartup ? '正在取消…' : '取消启动')}</button>}
       <fieldset className="routing-settings" disabled={controlsBusy} aria-describedby="routing-description">
         <legend className="connection-setting-title">{t('代理模式')}</legend>
         <div className="routing-options">{routingModes.map(option => <label className={`routing-option${state.routingMode === option.value ? ' selected' : ''}`} key={option.value}>
