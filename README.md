@@ -53,6 +53,8 @@ See [security boundaries and verification](docs/security.md) for TUN isolation, 
 
 **System proxy** starts mihomo and updates the macOS proxy settings. It affects apps that follow those settings; it does not cover apps that ignore them or UDP traffic. Vela restores the previous settings when disconnected and attempts to restore them if the GUI exits unexpectedly.
 
+When the default network service changes, Vela restores the old service and applies the proxy to the new service. Temporary route lookup failures are reported and retried; proxy changes made by another app stop the connection.
+
 The local mixed proxy listens on `127.0.0.1:7890` by default.
 The sidebar speed chart shows system interface traffic; Diagnostics shows proxy traffic reported by the core.
 
